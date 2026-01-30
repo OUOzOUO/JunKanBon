@@ -34,29 +34,28 @@
                 <div><p class="text-xs text-gray-500">你出了</p><p id="my-move" class="text-3xl">?</p></div>
                 <div><p class="text-xs text-gray-500">對方出</p><p id="opp-move" class="text-3xl">?</p></div>
             </div>
-            <div id="final-result" class="text-2xl font-black text-red-500 italic">贏了！</div>
+            <div id="final-result" class="text-2xl font-black text-red-500 italic"></div>
             <button onclick="location.reload()" class="mt-6 text-indigo-500 text-sm underline">回首頁</button>
         </div>
     </div>
 
     <script>
-        // --- ⚠️ 重要：請在這裡填入你的 Firebase 設定 ---
+        // Firebase 設定
         const firebaseConfig = {
-              apiKey: "AIzaSyCkqnrJZWo66jXTUmLzs4iA-9HHhAJQ06A",
-              authDomain: "junkanbon.firebaseapp.com",
-              projectId: "junkanbon",
-              storageBucket: "junkanbon.firebasestorage.app",
-              messagingSenderId: "548450406216",
-              appId: "1:548450406216:web:d5ce6a06f141b011a7ed7d",
-              measurementId: "G-G324W6H3BV",
-              // 這是手動補上的資料庫網址，請確保你在 Firebase 有開啟 Realtime Database
-              databaseURL: "https://junkanbon-default-rtdb.firebaseio.com" 
+            apiKey: "AIzaSyCkqnrJZWo66jXTUmLzs4iA-9HHhAJQ06A",
+            authDomain: "junkanbon.firebaseapp.com",
+            projectId: "junkanbon",
+            storageBucket: "junkanbon.firebasestorage.app",
+            messagingSenderId: "548450406216",
+            appId: "1:548450406216:web:d5ce6a06f141b011a7ed7d",
+            measurementId: "G-G324W6H3BV",
+            databaseURL: "https://junkanbon-default-rtdb.firebaseio.com" 
         };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
         let currentRoom = null;
-        let myRole = null; // 'player1' 或 'player2'
+        let myRole = null; 
 
         function createNewRoom() {
             const rid = Math.floor(1000 + Math.random() * 9000);
@@ -68,21 +67,18 @@
         }
 
         function joinRoom() {
-        const rid = document.getElementById('room-input').value;
-        if(!rid) return alert("請輸入房號");
+            const rid = document.getElementById('room-input').value;
+            if(!rid) return alert("請輸入房號");
 
-        // 🔍 檢查房間是否真的存在於 Firebase 資料庫中
-        db.ref('rooms/' + rid).once('value', (snapshot) => {
-            if (snapshot.exists()) {
-                // 房間存在，確認身分並進入
-                myRole = 'player2';
-                enterRoom(rid);
-            } else {
-                // 房間不存在，提醒玩家
-                alert("❌ 找不到房間 " + rid + "，請確認房號是否正確，或請好友先建立房間。");
-            }
-    });
-}
+            // 🔍 檢查房間是否存在
+            db.ref('rooms/' + rid).once('value', (snapshot) => {
+                if (snapshot.exists()) {
+                    myRole = 'player2';
+                    enterRoom(rid);
+                } else {
+                    alert("❌ 找不到房間 " + rid + "，請確認房號是否正確，或請好友先建立房間。");
+                }
+            });
         }
 
         function enterRoom(rid) {
@@ -101,14 +97,12 @@
                 const me = data[myRole];
                 const opp = data[myRole === 'player1' ? 'player2' : 'player1'];
 
-                // 狀態更新
                 if(opp.status === 'ready' && me.status !== 'ready') {
                     document.getElementById('status-msg').innerText = "對手已出拳！快選一個！";
                 } else if(me.status === 'ready' && opp.status !== 'ready') {
                     document.getElementById('status-msg').innerText = "已出拳，等待對手...";
                 }
 
-                // 判定勝負
                 if(me.status === 'ready' && opp.status === 'ready') {
                     showResult(me.choice, opp.choice);
                 }
@@ -128,9 +122,7 @@
             document.getElementById('result-area').classList.remove('hidden');
             document.getElementById('my-move').innerText = moveEmoji(myMove);
             document.getElementById('opp-move').innerText = moveEmoji(oppMove);
-            
-            const res = judge(myMove, oppMove);
-            document.getElementById('final-result').innerText = res;
+            document.getElementById('final-result').innerText = judge(myMove, oppMove);
         }
 
         function moveEmoji(m) {
@@ -147,4 +139,3 @@
     </script>
 </body>
 </html>
-
