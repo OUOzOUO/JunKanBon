@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>線上猜拳大戰 - 自訂房號版</title>
+    <title>線上猜拳大戰 - 同步進階版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 </head>
 <body class="bg-slate-100 flex flex-col items-center justify-center min-h-screen p-4 font-sans">
 
-    <div id="setup-screen" class="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm text-center">
+    <div id="setup-screen" class="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm text-center border-t-4 border-indigo-500">
         <h1 class="text-2xl font-bold mb-6 text-indigo-600">✌️ 線上猜拳大戰</h1>
         
         <div class="mb-6">
@@ -49,12 +49,16 @@
                 </div>
             </div>
             <div id="final-result" class="text-3xl font-black text-red-500 italic mb-4"></div>
-            <button onclick="location.reload()" class="w-full bg-gray-100 text-gray-600 py-3 rounded-lg text-sm font-bold hover:bg-gray-200 transition">回首頁 / 再玩一次</button>
+            
+            <div class="grid grid-cols-2 gap-3">
+                <button id="rematch-btn" onclick="requestRematch()" class="bg-indigo-500 text-white py-3 rounded-lg text-sm font-bold hover:bg-indigo-600 transition shadow-md">再玩一次</button>
+                <button onclick="location.reload()" class="bg-gray-100 text-gray-600 py-3 rounded-lg text-sm font-bold hover:bg-gray-200 transition">退出房間</button>
+            </div>
         </div>
     </div>
 
     <script>
-        // --- Firebase 設定 ---
+        // --- Firebase 設定 (維持不變) ---
         const firebaseConfig = {
             apiKey: "AIzaSyCkqnrJZWo66jXTUmLzs4iA-9HHhAJQ06A",
             authDomain: "junkanbon.firebaseapp.com",
@@ -71,26 +75,18 @@
         let currentRoom = null;
         let myRole = null; 
 
-        // 🟢 房號驗證器 (檢查是否為 4 位純數字)
-        function isValidRoomId(id) {
-            return /^\d{4}$/.test(id);
-        }
+        function isValidRoomId(id) { return /^\d{4}$/.test(id); }
 
-        // 🔵 處理建立按鈕
         function handleCreate() {
             let rid = document.getElementById('room-input').value;
-            
             if (rid === "") {
-                // 如果沒輸入，隨機產生
                 rid = Math.floor(1000 + Math.random() * 9000).toString();
             } else if (!isValidRoomId(rid)) {
-                return alert("⚠️ 房號格式錯誤！請輸入 4 位純數字 (例如 8888)");
+                return alert("⚠️ 房號格式錯誤！請輸入 4 位數字");
             }
-
-            // 檢查該房號是否已被佔用
             db.ref('rooms/' + rid).once('value', (snapshot) => {
                 if (snapshot.exists()) {
-                    alert("⚠️ 房間 " + rid + " 已存在，請換一個房號或直接加入！");
+                    alert("⚠️ 房間已存在！");
                 } else {
                     createRoom(rid);
                 }
@@ -106,19 +102,21 @@
             }).then(() => enterRoom(rid));
         }
 
-        // 🟠 處理加入按鈕
         function handleJoin() {
             const rid = document.getElementById('room-input').value;
-            if (!isValidRoomId(rid)) return alert("⚠️ 請輸入正確的 4 位數字房號才能加入！");
+            if (!isValidRoomId(rid)) return alert("⚠️ 請輸入 4 位數字房號");
 
             db.ref('rooms/' + rid).once('value', (snapshot) => {
                 if (snapshot.exists()) {
                     const data = snapshot.val();
-                    // 分配角色
-                    myRole = (!data.player1 || data.player1.status === 'waiting') ? 'player1' : 'player2';
+                    // 簡單的滿人檢查
+                    if (data.player1 && data.player1.status !== "waiting" && data.player2 && data.player2.status !== "waiting") {
+                        return alert("房間已滿！");
+                    }
+                    myRole = (data.player1.status === 'waiting') ? 'player1' : 'player2';
                     enterRoom(rid);
                 } else {
-                    alert("❌ 找不到房間 " + rid + "，請先建立它！");
+                    alert("❌ 找不到房間！");
                 }
             });
         }
@@ -139,19 +137,40 @@
                 const me = data[myRole];
                 const opp = data[(myRole === 'player1') ? 'player2' : 'player1'];
 
+                // --- 核心同步邏輯 ---
+                
+                // 1. 如果雙方都按了再玩一次
+                if (me.status === 'rematch' && opp.status === 'rematch') {
+                    resetGameData();
+                    return;
+                }
+
+                // 2. 判斷遊戲勝負顯示
                 if (me.status === 'ready' && opp.status === 'ready') {
                     showResult(me.choice, opp.choice);
-                } else if (opp.status === 'ready') {
+                } 
+                // 3. 處理再玩一次的等待狀態
+                else if (me.status === 'rematch') {
+                    document.getElementById('status-msg').innerText = "等待對手確認...";
+                    document.getElementById('rematch-btn').innerText = "已就緒...";
+                    document.getElementById('rematch-btn').classList.add('opacity-50', 'pointer-events-none');
+                }
+                else if (opp.status === 'rematch') {
+                    document.getElementById('status-msg').innerText = "對手想再玩一局！";
+                }
+                // 4. 一般出拳狀態
+                else if (opp.status === 'ready') {
                     document.getElementById('status-msg').innerText = "對手已出拳！";
                 } else if (me.status === 'ready') {
                     document.getElementById('status-msg').innerText = "等待對手中...";
                 } else {
-                    document.getElementById('status-msg').innerText = "等待對手加入...";
+                    document.getElementById('status-msg').innerText = "請出拳！";
                 }
             });
         }
 
         function play(move) {
+            if (navigator.vibrate) navigator.vibrate(50); // 震動回饋
             db.ref(`rooms/${currentRoom}/${myRole}`).update({ choice: move, status: 'ready' });
             document.getElementById('controls').classList.add('pointer-events-none', 'opacity-50');
         }
@@ -162,6 +181,26 @@
             document.getElementById('opp-move').innerText = moveEmoji(oppMove);
             document.getElementById('final-result').innerText = judge(myMove, oppMove);
             document.getElementById('status-msg').innerText = "戰況揭曉！";
+        }
+
+        // 按下「再玩一次」
+        function requestRematch() {
+            db.ref(`rooms/${currentRoom}/${myRole}`).update({ status: 'rematch' });
+        }
+
+        // 雙方都同意後，由其中一方執行重置即可 (Firebase 會同步)
+        function resetGameData() {
+            db.ref(`rooms/${currentRoom}`).update({
+                "player1/choice": "",
+                "player1/status": "waiting",
+                "player2/choice": "",
+                "player2/status": "waiting"
+            });
+            // 重置 UI
+            document.getElementById('result-area').classList.add('hidden');
+            document.getElementById('controls').classList.remove('pointer-events-none', 'opacity-50');
+            document.getElementById('rematch-btn').innerText = "再玩一次";
+            document.getElementById('rematch-btn').classList.remove('opacity-50', 'pointer-events-none');
         }
 
         function moveEmoji(m) { return m === '石頭' ? '✊' : (m === '剪刀' ? '✌️' : '🖐️'); }
