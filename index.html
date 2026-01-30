@@ -68,10 +68,21 @@
         }
 
         function joinRoom() {
-            const rid = document.getElementById('room-input').value;
-            if(!rid) return alert("請輸入房號");
-            myRole = 'player2';
-            enterRoom(rid);
+        const rid = document.getElementById('room-input').value;
+        if(!rid) return alert("請輸入房號");
+
+        // 🔍 檢查房間是否真的存在於 Firebase 資料庫中
+        db.ref('rooms/' + rid).once('value', (snapshot) => {
+            if (snapshot.exists()) {
+                // 房間存在，確認身分並進入
+                myRole = 'player2';
+                enterRoom(rid);
+            } else {
+                // 房間不存在，提醒玩家
+                alert("❌ 找不到房間 " + rid + "，請確認房號是否正確，或請好友先建立房間。");
+            }
+    });
+}
         }
 
         function enterRoom(rid) {
@@ -136,3 +147,4 @@
     </script>
 </body>
 </html>
+
