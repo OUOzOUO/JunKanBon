@@ -1,22 +1,135 @@
-// 1. 建立房間邏輯
-function createRoom() {
-    const roomId = Math.floor(1000 + Math.random() * 9000); // 產生隨機4位數
-    firebase.database().ref('rooms/' + roomId).set({
-        player1: { choice: null, status: 'waiting' },
-        player2: { choice: null, status: 'waiting' },
-        winner: null
-    });
-    return roomId;
-}
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>線上猜拳大戰</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+</head>
+<body class="bg-slate-100 flex flex-col items-center justify-center min-h-screen p-4 font-sans">
 
-// 2. 出拳邏輯 (確保隱私)
-function makeChoice(roomId, playerSlot, move) {
-    // playerSlot 為 'player1' 或 'player2'
-    firebase.database().ref(`rooms/${roomId}/${playerSlot}`).update({
-        choice: move,
-        status: 'ready'
-    });
-}
+    <div id="setup-screen" class="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm text-center">
+        <h1 class="text-2xl font-bold mb-6 text-indigo-600">✌️ 線上猜拳大戰</h1>
+        <button onclick="createNewRoom()" class="w-full bg-indigo-500 text-white py-3 rounded-lg mb-4 hover:bg-indigo-600 transition">建立新房間</button>
+        <div class="flex gap-2">
+            <input id="room-input" type="text" placeholder="輸入4位房號" class="flex-1 border p-3 rounded-lg text-center">
+            <button onclick="joinRoom()" class="bg-emerald-500 text-white px-4 py-3 rounded-lg hover:bg-emerald-600">加入</button>
+        </div>
+    </div>
 
-// 3. 判定勝負邏輯
-// 當監聽器發現兩邊 status 皆為 'ready' 時，前端才顯示雙方 choice 並計算結果
+    <div id="game-screen" class="hidden bg-white p-8 rounded-xl shadow-lg w-full max-w-sm text-center">
+        <h2 id="display-room-id" class="text-sm text-gray-400 mb-2">房間號：----</h2>
+        <div id="status-msg" class="text-lg font-semibold mb-6 text-gray-700">等待對手加入...</div>
+        
+        <div id="controls" class="grid grid-cols-3 gap-4 mb-8">
+            <button onclick="play('石頭')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 border-2 border-transparent focus:border-indigo-500">✊</button>
+            <button onclick="play('剪刀')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 border-2 border-transparent focus:border-indigo-500">✌️</button>
+            <button onclick="play('布')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 border-2 border-transparent focus:border-indigo-500">🖐️</button>
+        </div>
+
+        <div id="result-area" class="hidden border-t pt-6">
+            <div class="flex justify-around mb-4">
+                <div><p class="text-xs text-gray-500">你出了</p><p id="my-move" class="text-3xl">?</p></div>
+                <div><p class="text-xs text-gray-500">對方出</p><p id="opp-move" class="text-3xl">?</p></div>
+            </div>
+            <div id="final-result" class="text-2xl font-black text-red-500 italic">贏了！</div>
+            <button onclick="location.reload()" class="mt-6 text-indigo-500 text-sm underline">回首頁</button>
+        </div>
+    </div>
+
+    <script>
+        // --- ⚠️ 重要：請在這裡填入你的 Firebase 設定 ---
+        const firebaseConfig = {
+            apiKey: "你的API_KEY",
+            databaseURL: "你的DATABASE_URL",
+            projectId: "你的PROJECT_ID",
+            storageBucket: "你的STORAGE_BUCKET",
+            messagingSenderId: "你的SENDER_ID",
+            appId: "你的APP_ID"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        let currentRoom = null;
+        let myRole = null; // 'player1' 或 'player2'
+
+        function createNewRoom() {
+            const rid = Math.floor(1000 + Math.random() * 9000);
+            myRole = 'player1';
+            db.ref('rooms/' + rid).set({
+                player1: { choice: "", status: "waiting" },
+                player2: { choice: "", status: "waiting" }
+            }).then(() => enterRoom(rid));
+        }
+
+        function joinRoom() {
+            const rid = document.getElementById('room-input').value;
+            if(!rid) return alert("請輸入房號");
+            myRole = 'player2';
+            enterRoom(rid);
+        }
+
+        function enterRoom(rid) {
+            currentRoom = rid;
+            document.getElementById('setup-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            document.getElementById('display-room-id').innerText = "房間號：" + rid;
+            listenRoom(rid);
+        }
+
+        function listenRoom(rid) {
+            db.ref('rooms/' + rid).on('value', (snapshot) => {
+                const data = snapshot.val();
+                if(!data) return;
+
+                const me = data[myRole];
+                const opp = data[myRole === 'player1' ? 'player2' : 'player1'];
+
+                // 狀態更新
+                if(opp.status === 'ready' && me.status !== 'ready') {
+                    document.getElementById('status-msg').innerText = "對手已出拳！快選一個！";
+                } else if(me.status === 'ready' && opp.status !== 'ready') {
+                    document.getElementById('status-msg').innerText = "已出拳，等待對手...";
+                }
+
+                // 判定勝負
+                if(me.status === 'ready' && opp.status === 'ready') {
+                    showResult(me.choice, opp.choice);
+                }
+            });
+        }
+
+        function play(move) {
+            db.ref(`rooms/${currentRoom}/${myRole}`).update({
+                choice: move,
+                status: 'ready'
+            });
+            document.getElementById('controls').classList.add('pointer-events-none', 'opacity-50');
+        }
+
+        function showResult(myMove, oppMove) {
+            document.getElementById('status-msg').innerText = "結果揭曉！";
+            document.getElementById('result-area').classList.remove('hidden');
+            document.getElementById('my-move').innerText = moveEmoji(myMove);
+            document.getElementById('opp-move').innerText = moveEmoji(oppMove);
+            
+            const res = judge(myMove, oppMove);
+            document.getElementById('final-result').innerText = res;
+        }
+
+        function moveEmoji(m) {
+            if(m === '石頭') return '✊';
+            if(m === '剪刀') return '✌️';
+            return '🖐️';
+        }
+
+        function judge(me, opp) {
+            if(me === opp) return "平手！";
+            if((me === '石頭' && opp === '剪刀') || (me === '剪刀' && opp === '布') || (me === '布' && opp === '石頭')) return "你贏了！🔥";
+            return "你輸了...💀";
+        }
+    </script>
+</body>
+</html>
