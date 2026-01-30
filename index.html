@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>線上猜拳大戰 - 穩定修正版</title>
+    <title>猜猜猜猜拳</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
@@ -21,49 +21,63 @@
             <button onclick="handleCreate()" class="bg-indigo-500 text-white py-3 rounded-lg hover:bg-indigo-600 transition font-bold shadow-md">建立房間</button>
             <button onclick="handleJoin()" class="bg-emerald-500 text-white py-3 rounded-lg hover:bg-emerald-600 font-bold shadow-md">加入房間</button>
         </div>
-        <p class="mt-6 text-xs text-gray-400">提示：建立舊房號會直接清除該房舊紀錄</p>
     </div>
 
-    <div id="game-screen" class="hidden bg-white p-8 rounded-xl shadow-lg w-full max-w-sm text-center border-t-4 border-indigo-500">
-        <h2 id="display-room-id" class="text-sm text-gray-400 mb-2 font-mono">房間號：----</h2>
-        <div id="status-msg" class="text-lg font-semibold mb-6 text-gray-700 h-8 flex items-center justify-center">等待對手加入...</div>
-        
-        <div id="controls" class="grid grid-cols-3 gap-4 mb-8">
-            <button onclick="play('石頭')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 border-2 border-transparent transition active:scale-90 shadow-sm">✊</button>
-            <button onclick="play('剪刀')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 border-2 border-transparent transition active:scale-90 shadow-sm">✌️</button>
-            <button onclick="play('布')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 border-2 border-transparent transition active:scale-90 shadow-sm">🖐️</button>
+    <div id="game-screen" class="hidden w-full max-w-sm">
+        <div class="bg-white p-6 rounded-xl shadow-lg text-center border-t-4 border-indigo-500 mb-4">
+            <div class="flex justify-between items-start mb-4">
+                <span id="display-room-id" class="text-xs font-mono text-gray-400">房間：----</span>
+                <button onclick="location.reload()" class="text-xs text-red-400 hover:underline">退出</button>
+            </div>
+
+            <div class="flex justify-around items-center bg-slate-50 py-3 rounded-lg mb-6 border border-slate-100">
+                <div class="text-center">
+                    <p class="text-[10px] text-gray-400 uppercase tracking-widest">Player 1</p>
+                    <p id="p1-score" class="text-2xl font-black text-indigo-600">0</p>
+                </div>
+                <div class="text-gray-300 font-light text-xl">:</div>
+                <div class="text-center">
+                    <p class="text-[10px] text-gray-400 uppercase tracking-widest">Player 2</p>
+                    <p id="p2-score" class="text-2xl font-black text-emerald-600">0</p>
+                </div>
+            </div>
+
+            <div id="status-msg" class="text-lg font-semibold mb-6 text-gray-700 h-8 flex items-center justify-center">請出拳！</div>
+            
+            <div id="controls" class="grid grid-cols-3 gap-4 mb-8">
+                <button onclick="play('石頭')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 transition active:scale-90 shadow-sm border border-slate-100">✊</button>
+                <button onclick="play('剪刀')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 transition active:scale-90 shadow-sm border border-slate-100">✌️</button>
+                <button onclick="play('布')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 transition active:scale-90 shadow-sm border border-slate-100">🖐️</button>
+            </div>
+
+            <div id="result-area" class="hidden border-t pt-6 animate-pop-in">
+                <div class="flex justify-around mb-4">
+                    <div class="text-center">
+                        <p class="text-xs text-gray-500 mb-1">你出了</p>
+                        <p id="my-move" class="text-4xl">?</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-xs text-gray-500 mb-1">對手出</p>
+                        <p id="opp-move" class="text-4xl">?</p>
+                    </div>
+                </div>
+                <div id="final-result" class="text-3xl font-black text-red-500 italic mb-4"></div>
+                <button id="rematch-btn" onclick="requestRematch()" class="w-full bg-indigo-500 text-white py-3 rounded-lg text-sm font-bold hover:bg-indigo-600 shadow-md transition">下一局</button>
+            </div>
         </div>
 
-        <div id="result-area" class="hidden border-t pt-6 animate-pop-in">
-            <div class="flex justify-around mb-4">
-                <div class="text-center">
-                    <p class="text-xs text-gray-500 mb-1">你出了</p>
-                    <p id="my-move" class="text-4xl">?</p>
+        <div class="bg-white/80 backdrop-blur p-4 rounded-xl shadow-inner border border-white max-h-48 overflow-y-auto">
+            <h3 class="text-[10px] font-bold text-gray-400 uppercase mb-2 sticky top-0 bg-white/10">對戰紀錄 (最新在最前)</h3>
+            <div id="history-list" class="space-y-1 text-xs font-mono">
                 </div>
-                <div class="text-center">
-                    <p class="text-xs text-gray-500 mb-1">對方出</p>
-                    <p id="opp-move" class="text-4xl">?</p>
-                </div>
-            </div>
-            <div id="final-result" class="text-3xl font-black text-red-500 italic mb-4"></div>
-            
-            <div class="grid grid-cols-2 gap-3">
-                <button id="rematch-btn" onclick="requestRematch()" class="bg-indigo-500 text-white py-3 rounded-lg text-sm font-bold hover:bg-indigo-600 transition shadow-md">再玩一次</button>
-                <button onclick="location.reload()" class="bg-gray-100 text-gray-600 py-3 rounded-lg text-sm font-bold hover:bg-gray-200 transition">退出房間</button>
-            </div>
         </div>
     </div>
 
     <script>
-        // --- Firebase 設定 (請保持不變) ---
         const firebaseConfig = {
             apiKey: "AIzaSyCkqnrJZWo66jXTUmLzs4iA-9HHhAJQ06A",
             authDomain: "junkanbon.firebaseapp.com",
             projectId: "junkanbon",
-            storageBucket: "junkanbon.firebasestorage.app",
-            messagingSenderId: "548450406216",
-            appId: "1:548450406216:web:d5ce6a06f141b011a7ed7d",
-            measurementId: "G-G324W6H3BV",
             databaseURL: "https://junkanbon-default-rtdb.firebaseio.com" 
         };
         firebase.initializeApp(firebaseConfig);
@@ -71,57 +85,24 @@
 
         let currentRoom = null;
         let myRole = null; 
+        let hasJudged = false; // 防止重複判分
 
-        function isValidRoomId(id) { return /^\d{4}$/.test(id); }
-
-        // 解決問題 2：建立房間時若房號已存在，詢問是否覆蓋
         function handleCreate() {
-            let rid = document.getElementById('room-input').value;
-            if (rid === "") {
-                rid = Math.floor(1000 + Math.random() * 9000).toString();
-            } else if (!isValidRoomId(rid)) {
-                return alert("⚠️ 房號格式錯誤！請輸入 4 位數字");
-            }
-
-            db.ref('rooms/' + rid).once('value', (snapshot) => {
-                if (snapshot.exists()) {
-                    if (confirm("房間 " + rid + " 已經存在，要清除舊紀錄並重新建立嗎？")) {
-                        createRoom(rid);
-                    }
-                } else {
-                    createRoom(rid);
-                }
-            });
-        }
-
-        function createRoom(rid) {
-            myRole = 'player1';
+            let rid = document.getElementById('room-input').value || Math.floor(1000 + Math.random() * 9000).toString();
             db.ref('rooms/' + rid).set({
                 player1: { choice: "", status: "waiting" },
                 player2: { choice: "", status: "waiting" },
-                lastActivity: Date.now()
-            }).then(() => enterRoom(rid));
+                scores: { player1: 0, player2: 0 },
+                history: []
+            }).then(() => { myRole = 'player1'; enterRoom(rid); });
         }
 
         function handleJoin() {
             const rid = document.getElementById('room-input').value;
-            if (!isValidRoomId(rid)) return alert("⚠️ 請輸入 4 位數字房號");
-
-            db.ref('rooms/' + rid).once('value', (snapshot) => {
-                const data = snapshot.val();
-                if (snapshot.exists()) {
-                    // 修正問題 2：判斷哪邊可以加入
-                    if (data.player1.status === 'waiting') {
-                        myRole = 'player1';
-                    } else if (data.player2.status === 'waiting') {
-                        myRole = 'player2';
-                    } else {
-                        return alert("❌ 房間已滿！您可以點擊「建立」來重整該房間。");
-                    }
-                    enterRoom(rid);
-                } else {
-                    alert("❌ 找不到房間！");
-                }
+            db.ref('rooms/' + rid).once('value', (s) => {
+                if (!s.exists()) return alert("找不到房間");
+                myRole = (s.val().player1.status === 'waiting') ? 'player1' : 'player2';
+                enterRoom(rid);
             });
         }
 
@@ -129,7 +110,7 @@
             currentRoom = rid;
             document.getElementById('setup-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.remove('hidden');
-            document.getElementById('display-room-id').innerText = "房間號：" + rid;
+            document.getElementById('display-room-id').innerText = "房間：" + rid;
             listenRoom(rid);
         }
 
@@ -138,56 +119,76 @@
                 const data = snapshot.val();
                 if(!data) return;
 
+                // 更新分數顯示
+                document.getElementById('p1-score').innerText = data.scores?.player1 || 0;
+                document.getElementById('p2-score').innerText = data.scores?.player2 || 0;
+
+                // 更新歷史紀錄
+                updateHistoryUI(data.history);
+
                 const me = data[myRole];
                 const opp = data[(myRole === 'player1') ? 'player2' : 'player1'];
 
-                // 解決問題 1：偵測雙方皆為 rematch
+                // 同步準備下一局
                 if (me.status === 'rematch' && opp.status === 'rematch') {
-                    // 僅由 player1 執行重置動作，避免多人重複執行造成衝突
-                    if (myRole === 'player1') {
-                        resetGameData();
-                    }
+                    if (myRole === 'player1') resetGameData();
                     return;
                 }
 
-                // 偵測一方已經重置回 waiting，另一方還在 rematch 的狀態
-                if (me.status === 'rematch' && opp.status === 'waiting') {
-                    resetUI(); // 強制本地 UI 回到初始態
-                }
-
+                // 勝負邏輯
                 if (me.status === 'ready' && opp.status === 'ready') {
+                    if (!hasJudged && myRole === 'player1') {
+                        processRoundResult(me.choice, opp.choice, data.scores);
+                    }
                     showResult(me.choice, opp.choice);
-                } else if (me.status === 'rematch') {
-                    document.getElementById('status-msg').innerText = "等待對手準備下一局...";
-                    updateRematchBtn(true);
-                } else if (opp.status === 'rematch') {
-                    document.getElementById('status-msg').innerText = "對手想再玩一局！";
-                    updateRematchBtn(false);
                 } else if (me.status === 'waiting' && opp.status === 'waiting') {
                     resetUI();
-                    document.getElementById('status-msg').innerText = "對手已就緒，請出拳！";
-                } else if (opp.status === 'ready') {
-                    document.getElementById('status-msg').innerText = "對手已出拳！";
-                } else if (me.status === 'ready') {
-                    document.getElementById('status-msg').innerText = "等待對手中...";
+                } else if (me.status === 'rematch') {
+                    document.getElementById('status-msg').innerText = "等待對手準備...";
+                    document.getElementById('rematch-btn').innerText = "已就緒...";
                 } else {
-                    document.getElementById('status-msg').innerText = (opp.status === 'waiting' && myRole === 'player1') ? "等待對手加入..." : "請出拳！";
+                    document.getElementById('status-msg').innerText = (me.status === 'ready') ? "等待對手中..." : "請出拳！";
                 }
             });
         }
 
         function play(move) {
             if (navigator.vibrate) navigator.vibrate(50);
+            hasJudged = false;
             db.ref(`rooms/${currentRoom}/${myRole}`).update({ choice: move, status: 'ready' });
             document.getElementById('controls').classList.add('pointer-events-none', 'opacity-50');
+        }
+
+        // 由 Player 1 統一計算分數與寫入歷史
+        function processRoundResult(p1Move, p2Move, oldScores) {
+            hasJudged = true;
+            let winner = judgeWinner(p1Move, p2Move);
+            let newScores = { ...oldScores };
+            
+            if (winner === 'player1') newScores.player1++;
+            if (winner === 'player2') newScores.player2++;
+
+            const record = `${moveEmoji(p1Move)} VS ${moveEmoji(p2Move)} - ${winner === 'draw' ? '平手' : (winner === 'player1' ? 'P1勝' : 'P2勝')}`;
+            
+            db.ref(`rooms/${currentRoom}`).update({
+                scores: newScores,
+                history: [record, ...(snapshot_history || [])].slice(0, 10) // 只保留最近10筆
+            });
+        }
+
+        // 輔助變數用於歷史紀錄更新
+        let snapshot_history = [];
+        function updateHistoryUI(history) {
+            snapshot_history = history || [];
+            const list = document.getElementById('history-list');
+            list.innerHTML = snapshot_history.map(item => `<div class="p-1 border-b border-slate-50 text-gray-500">${item}</div>`).join('');
         }
 
         function showResult(myMove, oppMove) {
             document.getElementById('result-area').classList.remove('hidden');
             document.getElementById('my-move').innerText = moveEmoji(myMove);
             document.getElementById('opp-move').innerText = moveEmoji(oppMove);
-            document.getElementById('final-result').innerText = judge(myMove, oppMove);
-            document.getElementById('status-msg').innerText = "戰況揭曉！";
+            document.getElementById('final-result').innerText = judgeText(myMove, oppMove);
         }
 
         function requestRematch() {
@@ -195,47 +196,37 @@
         }
 
         function resetGameData() {
-            db.ref(`rooms/${currentRoom}`).update({
-                "player1/choice": "",
-                "player1/status": "waiting",
-                "player2/choice": "",
-                "player2/status": "waiting",
-                lastActivity: Date.now()
-            });
+            db.ref(`rooms/${currentRoom}/player1`).update({ choice: "", status: "waiting" });
+            db.ref(`rooms/${currentRoom}/player2`).update({ choice: "", status: "waiting" });
         }
 
         function resetUI() {
             document.getElementById('result-area').classList.add('hidden');
             document.getElementById('controls').classList.remove('pointer-events-none', 'opacity-50');
-            updateRematchBtn(false);
-        }
-
-        function updateRematchBtn(isWaiting) {
-            const btn = document.getElementById('rematch-btn');
-            if (isWaiting) {
-                btn.innerText = "已就緒...";
-                btn.classList.add('opacity-50', 'pointer-events-none');
-            } else {
-                btn.innerText = "再玩一次";
-                btn.classList.remove('opacity-50', 'pointer-events-none');
-            }
+            document.getElementById('rematch-btn').innerText = "下一局";
         }
 
         function moveEmoji(m) { return m === '石頭' ? '✊' : (m === '剪刀' ? '✌️' : '🖐️'); }
+        
+        function judgeWinner(p1, p2) {
+            if(p1 === p2) return 'draw';
+            if((p1 === '石頭' && p2 === '剪刀') || (p1 === '剪刀' && p2 === '布') || (p1 === '布' && p2 === '石頭')) return 'player1';
+            return 'player2';
+        }
 
-        function judge(me, opp) {
-            if(me === opp) return "平手！🤝";
-            if((me === '石頭' && opp === '剪刀') || (me === '剪刀' && opp === '布') || (me === '布' && opp === '石頭')) return "你贏了！🔥";
-            return "你輸了...💀";
+        function judgeText(me, opp) {
+            const win = judgeWinner(me, opp);
+            if(win === 'draw') return "平手！🤝";
+            const iAmP1 = (myRole === 'player1');
+            return ((win === 'player1' && iAmP1) || (win === 'player2' && !iAmP1)) ? "你贏了！🔥" : "你輸了...💀";
         }
     </script>
 
     <style>
-        @keyframes pop-in {
-            0% { transform: scale(0.9); opacity: 0; }
-            100% { transform: scale(1); opacity: 1; }
-        }
-        .animate-pop-in { animation: pop-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        @keyframes pop-in { 0% { transform: scale(0.95); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        .animate-pop-in { animation: pop-in 0.3s ease-out forwards; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
     </style>
 </body>
 </html>
