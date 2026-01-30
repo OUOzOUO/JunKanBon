@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>線上猜拳大戰 - 穩定版</title>
+    <title>線上猜拳大戰 - 自訂房號版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
@@ -12,25 +12,32 @@
 
     <div id="setup-screen" class="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm text-center">
         <h1 class="text-2xl font-bold mb-6 text-indigo-600">✌️ 線上猜拳大戰</h1>
-        <button onclick="createNewRoom()" class="w-full bg-indigo-500 text-white py-3 rounded-lg mb-4 hover:bg-indigo-600 transition font-bold">建立新房間</button>
-        <div class="flex gap-2">
-            <input id="room-input" type="text" placeholder="輸入4位房號" class="flex-1 border p-3 rounded-lg text-center focus:ring-2 focus:ring-indigo-500 outline-none">
-            <button onclick="joinRoom()" class="bg-emerald-500 text-white px-4 py-3 rounded-lg hover:bg-emerald-600 font-bold">加入</button>
+        
+        <div class="mb-6">
+            <label class="block text-gray-500 text-sm mb-2">請輸入 4 位數房號</label>
+            <input id="room-input" type="text" maxlength="4" placeholder="例如：8888" 
+                class="w-full border-2 border-gray-100 p-3 rounded-lg text-center text-2xl font-mono tracking-widest focus:border-indigo-500 outline-none transition">
         </div>
-        <p class="mt-4 text-xs text-gray-400">請其中一人建立房間，另一人輸入房號加入</p>
+
+        <div class="grid grid-cols-2 gap-4">
+            <button onclick="handleCreate()" class="bg-indigo-500 text-white py-3 rounded-lg hover:bg-indigo-600 transition font-bold shadow-md">建立房間</button>
+            <button onclick="handleJoin()" class="bg-emerald-500 text-white py-3 rounded-lg hover:bg-emerald-600 font-bold shadow-md">加入房間</button>
+        </div>
+        
+        <p class="mt-6 text-xs text-gray-400">提示：輸入 4 位數字後按建立可自訂房號<br>若不輸入直接按建立，系統將自動產生</p>
     </div>
 
-    <div id="game-screen" class="hidden bg-white p-8 rounded-xl shadow-lg w-full max-w-sm text-center">
+    <div id="game-screen" class="hidden bg-white p-8 rounded-xl shadow-lg w-full max-w-sm text-center border-t-4 border-indigo-500">
         <h2 id="display-room-id" class="text-sm text-gray-400 mb-2 font-mono">房間號：----</h2>
-        <div id="status-msg" class="text-lg font-semibold mb-6 text-gray-700 h-8">等待對手加入...</div>
+        <div id="status-msg" class="text-lg font-semibold mb-6 text-gray-700 h-8 flex items-center justify-center">等待對手加入...</div>
         
         <div id="controls" class="grid grid-cols-3 gap-4 mb-8">
-            <button onclick="play('石頭')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 border-2 border-transparent transition active:scale-95">✊</button>
-            <button onclick="play('剪刀')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 border-2 border-transparent transition active:scale-95">✌️</button>
-            <button onclick="play('布')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 border-2 border-transparent transition active:scale-95">🖐️</button>
+            <button onclick="play('石頭')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 border-2 border-transparent transition active:scale-90 shadow-sm">✊</button>
+            <button onclick="play('剪刀')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 border-2 border-transparent transition active:scale-90 shadow-sm">✌️</button>
+            <button onclick="play('布')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-100 border-2 border-transparent transition active:scale-90 shadow-sm">🖐️</button>
         </div>
 
-        <div id="result-area" class="hidden border-t pt-6 animate-bounce-short">
+        <div id="result-area" class="hidden border-t pt-6 animate-pop-in">
             <div class="flex justify-around mb-4">
                 <div class="text-center">
                     <p class="text-xs text-gray-500 mb-1">你出了</p>
@@ -42,12 +49,12 @@
                 </div>
             </div>
             <div id="final-result" class="text-3xl font-black text-red-500 italic mb-4"></div>
-            <button onclick="location.reload()" class="w-full bg-gray-200 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-300 transition">回首頁 / 再玩一次</button>
+            <button onclick="location.reload()" class="w-full bg-gray-100 text-gray-600 py-3 rounded-lg text-sm font-bold hover:bg-gray-200 transition">回首頁 / 再玩一次</button>
         </div>
     </div>
 
     <script>
-        // --- Firebase 設定 (已填入你的資料) ---
+        // --- Firebase 設定 ---
         const firebaseConfig = {
             apiKey: "AIzaSyCkqnrJZWo66jXTUmLzs4iA-9HHhAJQ06A",
             authDomain: "junkanbon.firebaseapp.com",
@@ -64,43 +71,58 @@
         let currentRoom = null;
         let myRole = null; 
 
-        // 1. 建立房間
-        function createNewRoom() {
-            const rid = Math.floor(1000 + Math.random() * 9000);
+        // 🟢 房號驗證器 (檢查是否為 4 位純數字)
+        function isValidRoomId(id) {
+            return /^\d{4}$/.test(id);
+        }
+
+        // 🔵 處理建立按鈕
+        function handleCreate() {
+            let rid = document.getElementById('room-input').value;
+            
+            if (rid === "") {
+                // 如果沒輸入，隨機產生
+                rid = Math.floor(1000 + Math.random() * 9000).toString();
+            } else if (!isValidRoomId(rid)) {
+                return alert("⚠️ 房號格式錯誤！請輸入 4 位純數字 (例如 8888)");
+            }
+
+            // 檢查該房號是否已被佔用
+            db.ref('rooms/' + rid).once('value', (snapshot) => {
+                if (snapshot.exists()) {
+                    alert("⚠️ 房間 " + rid + " 已存在，請換一個房號或直接加入！");
+                } else {
+                    createRoom(rid);
+                }
+            });
+        }
+
+        function createRoom(rid) {
             myRole = 'player1';
             db.ref('rooms/' + rid).set({
                 player1: { choice: "", status: "waiting" },
                 player2: { choice: "", status: "waiting" },
                 createdAt: Date.now()
-            }).then(() => {
-                enterRoom(rid);
-            }).catch(err => alert("建立失敗：" + err));
+            }).then(() => enterRoom(rid));
         }
 
-        // 2. 加入房間 (含自動分配身分邏輯)
-        function joinRoom() {
+        // 🟠 處理加入按鈕
+        function handleJoin() {
             const rid = document.getElementById('room-input').value;
-            if(!rid) return alert("請輸入房號");
+            if (!isValidRoomId(rid)) return alert("⚠️ 請輸入正確的 4 位數字房號才能加入！");
 
             db.ref('rooms/' + rid).once('value', (snapshot) => {
                 if (snapshot.exists()) {
                     const data = snapshot.val();
-                    
-                    // 自動判斷身分：若 P1 還沒準備好或資料為空，則補位 P1，否則當 P2
-                    if (!data.player1 || data.player1.status === 'waiting') {
-                        myRole = 'player1';
-                    } else {
-                        myRole = 'player2';
-                    }
-                    
+                    // 分配角色
+                    myRole = (!data.player1 || data.player1.status === 'waiting') ? 'player1' : 'player2';
                     enterRoom(rid);
                 } else {
-                    alert("❌ 找不到房間 " + rid + "，請確認房號或重新建立。");
+                    alert("❌ 找不到房間 " + rid + "，請先建立它！");
                 }
             });
         }
 
-        // 3. 進入房間畫面
         function enterRoom(rid) {
             currentRoom = rid;
             document.getElementById('setup-screen').classList.add('hidden');
@@ -109,64 +131,40 @@
             listenRoom(rid);
         }
 
-        // 4. 監聽房間動態
         function listenRoom(rid) {
             db.ref('rooms/' + rid).on('value', (snapshot) => {
                 const data = snapshot.val();
                 if(!data) return;
 
                 const me = data[myRole];
-                const oppRole = (myRole === 'player1') ? 'player2' : 'player1';
-                const opp = data[oppRole];
+                const opp = data[(myRole === 'player1') ? 'player2' : 'player1'];
 
-                // 更新提示文字
-                if (opp.status === 'ready' && me.status !== 'ready') {
-                    document.getElementById('status-msg').innerText = "對手已出拳！快選一個！";
-                } else if (me.status === 'ready' && opp.status !== 'ready') {
-                    document.getElementById('status-msg').innerText = "已出拳，等待對手中...";
-                } else if (me.status === 'ready' && opp.status === 'ready') {
-                    document.getElementById('status-msg').innerText = "雙方皆已出拳！";
+                if (me.status === 'ready' && opp.status === 'ready') {
                     showResult(me.choice, opp.choice);
+                } else if (opp.status === 'ready') {
+                    document.getElementById('status-msg').innerText = "對手已出拳！";
+                } else if (me.status === 'ready') {
+                    document.getElementById('status-msg').innerText = "等待對手中...";
                 } else {
-                    document.getElementById('status-msg').innerText = "等待對手加入或出拳...";
+                    document.getElementById('status-msg').innerText = "等待對手加入...";
                 }
             });
         }
 
-        // 5. 點擊出拳
         function play(move) {
-            if (!currentRoom || !myRole) return;
-            
-            db.ref(`rooms/${currentRoom}/${myRole}`).update({
-                choice: move,
-                status: 'ready'
-            });
-            
-            // 出拳後禁用按鈕
+            db.ref(`rooms/${currentRoom}/${myRole}`).update({ choice: move, status: 'ready' });
             document.getElementById('controls').classList.add('pointer-events-none', 'opacity-50');
         }
 
-        // 6. 顯示結果
         function showResult(myMove, oppMove) {
-            const resultArea = document.getElementById('result-area');
-            resultArea.classList.remove('hidden');
-            
+            document.getElementById('result-area').classList.remove('hidden');
             document.getElementById('my-move').innerText = moveEmoji(myMove);
             document.getElementById('opp-move').innerText = moveEmoji(oppMove);
-            
-            const resultText = judge(myMove, oppMove);
-            document.getElementById('final-result').innerText = resultText;
-            
-            // 根據勝負變換顏色
-            const resEl = document.getElementById('final-result');
-            if(resultText.includes("贏")) resEl.className = "text-3xl font-black text-orange-500 italic mb-4";
-            else if(resultText.includes("輸")) resEl.className = "text-3xl font-black text-slate-500 italic mb-4";
-            else resEl.className = "text-3xl font-black text-blue-500 italic mb-4";
+            document.getElementById('final-result').innerText = judge(myMove, oppMove);
+            document.getElementById('status-msg').innerText = "戰況揭曉！";
         }
 
-        function moveEmoji(m) {
-            return m === '石頭' ? '✊' : (m === '剪刀' ? '✌️' : '🖐️');
-        }
+        function moveEmoji(m) { return m === '石頭' ? '✊' : (m === '剪刀' ? '✌️' : '🖐️'); }
 
         function judge(me, opp) {
             if(me === opp) return "平手！🤝";
@@ -176,13 +174,11 @@
     </script>
 
     <style>
-        @keyframes bounce-short {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
+        @keyframes pop-in {
+            0% { transform: scale(0.9); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
         }
-        .animate-bounce-short {
-            animation: bounce-short 0.5s ease-in-out 1;
-        }
+        .animate-pop-in { animation: pop-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
     </style>
 </body>
 </html>
