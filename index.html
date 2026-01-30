@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>線上猜拳大戰 - 同步進階版</title>
+    <title>線上猜拳大戰 - 穩定修正版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
@@ -12,19 +12,16 @@
 
     <div id="setup-screen" class="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm text-center border-t-4 border-indigo-500">
         <h1 class="text-2xl font-bold mb-6 text-indigo-600">✌️ 線上猜拳大戰</h1>
-        
         <div class="mb-6">
             <label class="block text-gray-500 text-sm mb-2">請輸入 4 位數房號</label>
             <input id="room-input" type="text" maxlength="4" placeholder="例如：8888" 
                 class="w-full border-2 border-gray-100 p-3 rounded-lg text-center text-2xl font-mono tracking-widest focus:border-indigo-500 outline-none transition">
         </div>
-
         <div class="grid grid-cols-2 gap-4">
             <button onclick="handleCreate()" class="bg-indigo-500 text-white py-3 rounded-lg hover:bg-indigo-600 transition font-bold shadow-md">建立房間</button>
             <button onclick="handleJoin()" class="bg-emerald-500 text-white py-3 rounded-lg hover:bg-emerald-600 font-bold shadow-md">加入房間</button>
         </div>
-        
-        <p class="mt-6 text-xs text-gray-400">提示：輸入 4 位數字後按建立可自訂房號<br>若不輸入直接按建立，系統將自動產生</p>
+        <p class="mt-6 text-xs text-gray-400">提示：建立舊房號會直接清除該房舊紀錄</p>
     </div>
 
     <div id="game-screen" class="hidden bg-white p-8 rounded-xl shadow-lg w-full max-w-sm text-center border-t-4 border-indigo-500">
@@ -58,7 +55,7 @@
     </div>
 
     <script>
-        // --- Firebase 設定 (維持不變) ---
+        // --- Firebase 設定 (請保持不變) ---
         const firebaseConfig = {
             apiKey: "AIzaSyCkqnrJZWo66jXTUmLzs4iA-9HHhAJQ06A",
             authDomain: "junkanbon.firebaseapp.com",
@@ -77,6 +74,7 @@
 
         function isValidRoomId(id) { return /^\d{4}$/.test(id); }
 
+        // 解決問題 2：建立房間時若房號已存在，詢問是否覆蓋
         function handleCreate() {
             let rid = document.getElementById('room-input').value;
             if (rid === "") {
@@ -84,9 +82,12 @@
             } else if (!isValidRoomId(rid)) {
                 return alert("⚠️ 房號格式錯誤！請輸入 4 位數字");
             }
+
             db.ref('rooms/' + rid).once('value', (snapshot) => {
                 if (snapshot.exists()) {
-                    alert("⚠️ 房間已存在！");
+                    if (confirm("房間 " + rid + " 已經存在，要清除舊紀錄並重新建立嗎？")) {
+                        createRoom(rid);
+                    }
                 } else {
                     createRoom(rid);
                 }
@@ -98,7 +99,7 @@
             db.ref('rooms/' + rid).set({
                 player1: { choice: "", status: "waiting" },
                 player2: { choice: "", status: "waiting" },
-                createdAt: Date.now()
+                lastActivity: Date.now()
             }).then(() => enterRoom(rid));
         }
 
@@ -107,13 +108,16 @@
             if (!isValidRoomId(rid)) return alert("⚠️ 請輸入 4 位數字房號");
 
             db.ref('rooms/' + rid).once('value', (snapshot) => {
+                const data = snapshot.val();
                 if (snapshot.exists()) {
-                    const data = snapshot.val();
-                    // 簡單的滿人檢查
-                    if (data.player1 && data.player1.status !== "waiting" && data.player2 && data.player2.status !== "waiting") {
-                        return alert("房間已滿！");
+                    // 修正問題 2：判斷哪邊可以加入
+                    if (data.player1.status === 'waiting') {
+                        myRole = 'player1';
+                    } else if (data.player2.status === 'waiting') {
+                        myRole = 'player2';
+                    } else {
+                        return alert("❌ 房間已滿！您可以點擊「建立」來重整該房間。");
                     }
-                    myRole = (data.player1.status === 'waiting') ? 'player1' : 'player2';
                     enterRoom(rid);
                 } else {
                     alert("❌ 找不到房間！");
@@ -137,40 +141,43 @@
                 const me = data[myRole];
                 const opp = data[(myRole === 'player1') ? 'player2' : 'player1'];
 
-                // --- 核心同步邏輯 ---
-                
-                // 1. 如果雙方都按了再玩一次
+                // 解決問題 1：偵測雙方皆為 rematch
                 if (me.status === 'rematch' && opp.status === 'rematch') {
-                    resetGameData();
+                    // 僅由 player1 執行重置動作，避免多人重複執行造成衝突
+                    if (myRole === 'player1') {
+                        resetGameData();
+                    }
                     return;
                 }
 
-                // 2. 判斷遊戲勝負顯示
+                // 偵測一方已經重置回 waiting，另一方還在 rematch 的狀態
+                if (me.status === 'rematch' && opp.status === 'waiting') {
+                    resetUI(); // 強制本地 UI 回到初始態
+                }
+
                 if (me.status === 'ready' && opp.status === 'ready') {
                     showResult(me.choice, opp.choice);
-                } 
-                // 3. 處理再玩一次的等待狀態
-                else if (me.status === 'rematch') {
-                    document.getElementById('status-msg').innerText = "等待對手確認...";
-                    document.getElementById('rematch-btn').innerText = "已就緒...";
-                    document.getElementById('rematch-btn').classList.add('opacity-50', 'pointer-events-none');
-                }
-                else if (opp.status === 'rematch') {
+                } else if (me.status === 'rematch') {
+                    document.getElementById('status-msg').innerText = "等待對手準備下一局...";
+                    updateRematchBtn(true);
+                } else if (opp.status === 'rematch') {
                     document.getElementById('status-msg').innerText = "對手想再玩一局！";
-                }
-                // 4. 一般出拳狀態
-                else if (opp.status === 'ready') {
+                    updateRematchBtn(false);
+                } else if (me.status === 'waiting' && opp.status === 'waiting') {
+                    resetUI();
+                    document.getElementById('status-msg').innerText = "對手已就緒，請出拳！";
+                } else if (opp.status === 'ready') {
                     document.getElementById('status-msg').innerText = "對手已出拳！";
                 } else if (me.status === 'ready') {
                     document.getElementById('status-msg').innerText = "等待對手中...";
                 } else {
-                    document.getElementById('status-msg').innerText = "請出拳！";
+                    document.getElementById('status-msg').innerText = (opp.status === 'waiting' && myRole === 'player1') ? "等待對手加入..." : "請出拳！";
                 }
             });
         }
 
         function play(move) {
-            if (navigator.vibrate) navigator.vibrate(50); // 震動回饋
+            if (navigator.vibrate) navigator.vibrate(50);
             db.ref(`rooms/${currentRoom}/${myRole}`).update({ choice: move, status: 'ready' });
             document.getElementById('controls').classList.add('pointer-events-none', 'opacity-50');
         }
@@ -183,24 +190,35 @@
             document.getElementById('status-msg').innerText = "戰況揭曉！";
         }
 
-        // 按下「再玩一次」
         function requestRematch() {
             db.ref(`rooms/${currentRoom}/${myRole}`).update({ status: 'rematch' });
         }
 
-        // 雙方都同意後，由其中一方執行重置即可 (Firebase 會同步)
         function resetGameData() {
             db.ref(`rooms/${currentRoom}`).update({
                 "player1/choice": "",
                 "player1/status": "waiting",
                 "player2/choice": "",
-                "player2/status": "waiting"
+                "player2/status": "waiting",
+                lastActivity: Date.now()
             });
-            // 重置 UI
+        }
+
+        function resetUI() {
             document.getElementById('result-area').classList.add('hidden');
             document.getElementById('controls').classList.remove('pointer-events-none', 'opacity-50');
-            document.getElementById('rematch-btn').innerText = "再玩一次";
-            document.getElementById('rematch-btn').classList.remove('opacity-50', 'pointer-events-none');
+            updateRematchBtn(false);
+        }
+
+        function updateRematchBtn(isWaiting) {
+            const btn = document.getElementById('rematch-btn');
+            if (isWaiting) {
+                btn.innerText = "已就緒...";
+                btn.classList.add('opacity-50', 'pointer-events-none');
+            } else {
+                btn.innerText = "再玩一次";
+                btn.classList.remove('opacity-50', 'pointer-events-none');
+            }
         }
 
         function moveEmoji(m) { return m === '石頭' ? '✊' : (m === '剪刀' ? '✌️' : '🖐️'); }
