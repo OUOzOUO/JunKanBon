@@ -42,12 +42,15 @@
     <script>
         // --- ⚠️ 重要：請在這裡填入你的 Firebase 設定 ---
         const firebaseConfig = {
-            apiKey: "你的API_KEY",
-            databaseURL: "你的DATABASE_URL",
-            projectId: "你的PROJECT_ID",
-            storageBucket: "你的STORAGE_BUCKET",
-            messagingSenderId: "你的SENDER_ID",
-            appId: "你的APP_ID"
+              apiKey: "AIzaSyCkqnrJZWo66jXTUmLzs4iA-9HHhAJQ06A",
+              authDomain: "junkanbon.firebaseapp.com",
+              projectId: "junkanbon",
+              storageBucket: "junkanbon.firebasestorage.app",
+              messagingSenderId: "548450406216",
+              appId: "1:548450406216:web:d5ce6a06f141b011a7ed7d",
+              measurementId: "G-G324W6H3BV",
+              // 這是手動補上的資料庫網址，請確保你在 Firebase 有開啟 Realtime Database
+              databaseURL: "https://junkanbon-default-rtdb.firebaseio.com" 
         };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
