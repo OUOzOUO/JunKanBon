@@ -34,7 +34,7 @@
                 </div>
                 <div>
                     <label class="block text-gray-500 text-xs mb-1 ml-1">房號 (普通4碼 / 爭霸賽 T+4碼)</label>
-                    <input id="room-input" type="text" maxlength="5" placeholder="例如：8888 或 T8888" 
+                    <input id="room-input" type="text" maxlength="6" placeholder="例如：8888 或 T8888" 
                         class="w-full border-2 border-gray-100 p-3 rounded-lg text-center text-xl font-mono tracking-widest focus:border-indigo-500 outline-none transition uppercase">
                 </div>
             </div>
@@ -176,7 +176,7 @@
                     if (uid === myUid) return; 
                     
                     const user = users[uid];
-                    // 🌟 幽靈防護機制：濾掉壞掉的資料
+                    // 防呆：濾掉壞掉的資料
                     if (!user || !user.name || user.name === "undefined") return;
 
                     count++;
@@ -313,7 +313,7 @@
         }
 
         function handleCreate() {
-            let rid = document.getElementById('room-input').value;
+            let rid = document.getElementById('room-input').value.trim();
             if (!rid) rid = Math.floor(1000 + Math.random() * 9000).toString();
             if (!/^\d{4}$/.test(rid)) return alert("請輸入 4 位數字房號");
 
@@ -331,7 +331,7 @@
         }
 
         function handleJoin() {
-            const rid = document.getElementById('room-input').value;
+            const rid = document.getElementById('room-input').value.trim();
             if (!rid || !/^\d{4}$/.test(rid)) return alert("請輸入 4 位數房號");
 
             const roomRef = db.ref('rooms/' + rid);
@@ -339,7 +339,7 @@
                 if (!snap.exists()) return alert("❌ 找不到該房間，請確認房號是否正確！");
                 
                 roomRef.transaction((currentData) => {
-                    if (currentData === null) return; 
+                    if (currentData === null) return currentData; 
                     if (currentData.player1.status === "waiting" && (currentData.player1.name === "玩家1" || currentData.player1.name === "" || currentData.player1.name === "等待中...")) {
                         currentData.player1.name = myCurrentName;
                         return currentData;
@@ -506,9 +506,8 @@
         // ==========================================
 
         function createTournament() {
-            let tid = document.getElementById('room-input').value;
+            let tid = document.getElementById('room-input').value.trim();
             
-            // 🌟 防呆：自動轉大寫，純數字補 T
             if (tid && /^\d{4}$/.test(tid)) {
                 tid = "T" + tid;
             } else if (!tid) {
@@ -532,11 +531,11 @@
             });
         }
 
+        // 🌟 修正點 1：將 transaction 拔除，改為安全的 once + set 確保必定能加入
         function joinTournament() {
-            let tid = document.getElementById('room-input').value;
+            let tid = document.getElementById('room-input').value.trim();
             if (!tid) return alert("請輸入爭霸賽房號！");
 
-            // 🌟 防呆：自動轉大寫，純數字補 T
             tid = tid.toUpperCase();
             if (/^\d{4}$/.test(tid)) {
                 tid = "T" + tid;
@@ -544,41 +543,45 @@
 
             const tRef = db.ref('tournaments/' + tid);
             
-            // 🌟 防卡死快取預熱
             tRef.once('value', (snap) => {
                 if (!snap.exists()) {
                     return alert("❌ 找不到該爭霸賽！請確認房號是否為 " + tid);
                 }
 
-                tRef.transaction((currentData) => {
-                    if (currentData === null) return currentData;
-                    if (currentData.status !== "waiting") return; 
+                const data = snap.val();
+                if (data.status !== "waiting") {
+                    return alert("❌ 該賽事已經開始或結束！");
+                }
 
-                    const playerCount = Object.keys(currentData.players || {}).length;
-                    if (playerCount >= 10) return; 
+                const playerCount = data.players ? Object.keys(data.players).length : 0;
+                if (playerCount >= 10) {
+                    return alert("❌ 爭霸賽已滿 10 人！");
+                }
 
-                    if (!currentData.players) currentData.players = {};
-                    currentData.players[myUid] = { name: myCurrentName };
-                    return currentData;
-
-                }, (error, committed, snapshot) => {
-                    if (error || !committed) {
-                        alert("❌ 爭霸賽已滿 10 人或該賽事已經開始！");
-                    } else {
-                        isTournamentHost = false;
-                        enterTournamentLobby(tid);
-                    }
+                // 直接將自己寫入 players 名單
+                db.ref(`tournaments/${tid}/players/${myUid}`).set({
+                    name: myCurrentName
+                }).then(() => {
+                    isTournamentHost = false;
+                    enterTournamentLobby(tid);
+                }).catch(err => {
+                    alert("❌ 加入失敗：" + err.message);
                 });
             });
         }
 
         function enterTournamentLobby(tid) {
             currentTournamentId = tid;
+            // 🌟 修正點 2：加入「退出大廳」的按鈕 (leaveTournament)
             document.getElementById('setup-screen').innerHTML = `
-                <h1 class="text-2xl font-bold mb-4 text-amber-500">☄️ 爭霸賽大廳：${tid}</h1>
+                <div class="flex justify-between items-start mb-4">
+                    <h1 class="text-2xl font-bold text-amber-500">☄️ 爭霸賽大廳：${tid}</h1>
+                </div>
                 <p class="text-sm text-gray-500 mb-4">等待玩家加入中... (最多 10 人)</p>
                 <div id="tourney-players" class="flex flex-wrap justify-center gap-2 mb-6"></div>
-                ${isTournamentHost ? `<button onclick="startTournamentMatchmaking()" class="w-full bg-amber-500 text-white py-3 rounded-lg font-bold shadow-md animate-pulse">馬上開始配對！</button>` : `<p class="text-amber-600 font-bold">等待房主開始配對...</p>`}
+                ${isTournamentHost ? `<button onclick="startTournamentMatchmaking()" class="w-full bg-amber-500 text-white py-3 rounded-lg font-bold shadow-md animate-pulse mb-3">馬上開始配對！</button>` : `<p class="text-amber-600 font-bold mb-4">等待房主開始配對...</p>`}
+                
+                <button onclick="leaveTournament()" class="text-xs text-red-400 hover:text-red-600 transition font-bold mt-2">退出爭霸賽大廳</button>
             `;
 
             db.ref('tournaments/' + tid).on('value', (snapshot) => {
@@ -595,6 +598,19 @@
                 if (data.status === "playing" && data.matches) {
                     renderBrackets(data.matches);
                 }
+            });
+        }
+
+        // 🌟 新增退出爭霸賽函數
+        function leaveTournament() {
+            if (!currentTournamentId || !myUid) return;
+            
+            // 從賽事名單中移除自己
+            db.ref(`tournaments/${currentTournamentId}/players/${myUid}`).remove().then(() => {
+                // 如果是房主退出的話，會稍微麻煩一點，這邊簡單處理直接退回首頁
+                currentTournamentId = null;
+                isTournamentHost = false;
+                location.reload(); // 重新載入網頁恢復到原始介面
             });
         }
 
