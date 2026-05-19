@@ -13,8 +13,8 @@
     <div id="invite-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 animate-pop-in">
         <div class="bg-white p-8 rounded-2xl shadow-2xl w-11/12 max-w-sm text-center border-t-4 border-indigo-500">
             <div class="text-5xl mb-4 animate-bounce">⚔️</div>
-            <h3 class="text-xl font-black text-gray-800 mb-2">收到對戰邀請！</h3>
-            <p class="text-gray-600 mb-8 text-sm">玩家 <span id="invite-host-name" class="font-bold text-indigo-600 text-base"></span> 向你下戰帖，是否迎戰？</p>
+            <h3 id="modal-title" class="text-xl font-black text-gray-800 mb-2">收到對戰請求！</h3>
+            <p class="text-gray-600 mb-8 text-sm">玩家 <span id="invite-host-name" class="font-bold text-indigo-600 text-base"></span> 想要與你對戰，是否接受？</p>
             <div class="grid grid-cols-2 gap-3">
                 <button onclick="acceptInvite()" class="bg-indigo-500 text-white py-3 rounded-xl font-bold hover:bg-indigo-600 transition shadow-md">🔥 接受挑戰</button>
                 <button onclick="declineInvite()" class="bg-gray-100 text-gray-500 py-3 rounded-xl font-bold hover:bg-gray-200 transition">婉拒</button>
@@ -128,6 +128,7 @@
         let myUid = null;
         let myCurrentName = "";
         let pendingInviteRoom = "";
+        let pendingRequesterUid = ""; // 暫存申請挑戰者的 UID
 
         function initLobby() {
             myCurrentName = localStorage.getItem('rps_nickname') || "玩家_" + Math.floor(1000 + Math.random() * 9000);
@@ -136,7 +137,7 @@
             const userRef = db.ref('users').push();
             myUid = userRef.key;
 
-            userRef.set({ name: myCurrentName, status: "idle", inviteRoom: "" });
+            userRef.set({ name: myCurrentName, status: "idle", inviteRoom: "", inviteFromName: "", matchingRoomId: "" });
             userRef.onDisconnect().remove();
 
             listenLobbyUsers();
@@ -150,6 +151,7 @@
             db.ref(`users/${myUid}`).update({ name: myCurrentName });
         }
 
+        // 監聽大廳玩家：調整狀態按鈕樣式與字樣
         function listenLobbyUsers() {
             db.ref('users').on('value', (snapshot) => {
                 const users = snapshot.val() || {};
@@ -163,9 +165,14 @@
                     const user = users[uid];
                     
                     let statusBadge = `<span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">閒置</span>`;
-                    let inviteBtn = `<button onclick="sendInvite('${uid}')" class="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded transition font-medium shadow-sm">邀請</button>`;
+                    let inviteBtn = `<button onclick="sendInvite('${uid}')" class="text-xs bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1.5 rounded transition font-medium shadow-sm">邀請</button>`;
                     
-                    if (user.status === "playing") {
+                    // 🌟 核心變動：若對方正在匹配中，按鈕改為綠色「匹配中」
+                    if (user.status === "matching") {
+                        statusBadge = `<span class="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded font-bold border border-amber-200">等待中</span>`;
+                        inviteBtn = `<button onclick="clickMatchPlayer('${uid}', '${user.matchingRoomId}')" class="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded transition font-bold shadow-sm animate-pulse">匹配中</button>`;
+                    }
+                    else if (user.status === "playing") {
                         statusBadge = `<span class="text-[10px] bg-red-50 text-red-500 px-1.5 py-0.5 rounded font-bold">戰鬥中</span>`;
                         inviteBtn = `<button disabled class="text-xs bg-gray-100 text-gray-400 px-3 py-1.5 rounded cursor-not-allowed">忙碌</button>`;
                     }
@@ -189,6 +196,18 @@
             });
         }
 
+        // 當路人點擊「匹配中」按鈕時
+        function clickMatchPlayer(hostUid, roomId) {
+            // 發送請求：把自己的資訊塞給在房間裡的房東 A
+            db.ref(`users/${hostUid}`).update({
+                inviteRoom: roomId,
+                inviteFromName: myCurrentName,
+                requesterUid: myUid // 告訴房東我是誰
+            });
+            alert("已發送對戰申請！請耐心等待房主核准...");
+        }
+
+        // 一對一直接主動發送邀請
         function sendInvite(targetUid) {
             const randomRoomId = Math.floor(1000 + Math.random() * 9000).toString();
             myRole = 'player1';
@@ -199,12 +218,13 @@
                 scores: { player1: 0, player2: 0 },
                 history: []
             }).then(() => {
-                db.ref(`users/${targetUid}`).update({ inviteRoom: randomRoomId, inviteFromName: myCurrentName });
+                db.ref(`users/${targetUid}`).update({ inviteRoom: randomRoomId, inviteFromName: myCurrentName, requesterUid: myUid });
                 if(myUid) db.ref(`users/${myUid}`).update({ status: "playing" });
                 enterRoom(randomRoomId);
             });
         }
 
+        // 監聽邀請：房東 A 或 被邀請者 接收通知的管道
         function listenMyInvites(myUserRef) {
             myUserRef.child('inviteRoom').on('value', (snapshot) => {
                 const rid = snapshot.val();
@@ -213,61 +233,104 @@
                     return;
                 }
 
-                myUserRef.child('inviteFromName').once('value', (nameSnap) => {
-                    const hostName = nameSnap.val() || "神祕玩家";
+                myUserRef.once('value', (userSnap) => {
+                    const uData = userSnap.val();
+                    const hostName = uData.inviteFromName || "神祕玩家";
                     pendingInviteRoom = rid;
+                    pendingRequesterUid = uData.requesterUid || "";
+                    
+                    // 渲染彈窗文字
                     document.getElementById('invite-host-name').innerText = hostName;
                     document.getElementById('invite-modal').classList.remove('hidden');
                 });
             });
         }
 
+        // 🟢 接受挑戰 (不論是答應邀請還是答應匹配申請)
         function acceptInvite() {
             document.getElementById('invite-modal').classList.add('hidden');
             if (!pendingInviteRoom) return;
 
             const rid = pendingInviteRoom;
-            db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", status: "playing" });
             
-            db.ref('rooms/' + rid).once('value', (snapshot) => {
-                if (snapshot.exists()) {
-                    myRole = 'player2';
-                    db.ref(`rooms/${rid}/player2`).update({
-                        name: myCurrentName,
-                        choice: "",
-                        status: "waiting"
-                    }).then(() => {
-                        enterRoom(rid);
-                    });
-                } else {
-                    alert("⚠️ 進房失敗，對方可能已經取消邀請或離開。");
-                    db.ref(`users/${myUid}`).update({ status: "idle" });
+            // 如果我是原本就在房間裡的建立者 (Player 1)
+            if (myRole === 'player1') {
+                db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "", status: "playing" });
+                // 更改挑戰者 B 的狀態為 playing，並放他進來
+                if (pendingRequesterUid) {
+                    db.ref(`users/${pendingRequesterUid}`).update({ inviteRoom: "ACCEPTED_" + rid });
                 }
-            });
+            } 
+            // 如果我是點擊「匹配中」加入的路人 (Player 2)
+            else {
+                db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "", status: "playing" });
+                db.ref(`rooms/${rid}/player2`).update({
+                    name: myCurrentName,
+                    choice: "",
+                    status: "waiting"
+                }).then(() => {
+                    enterRoom(rid);
+                });
+            }
         }
 
+        // 🔴 婉拒挑戰
         function declineInvite() {
             document.getElementById('invite-modal').classList.add('hidden');
             if (!pendingInviteRoom) return;
             
-            db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "" });
-            db.ref('rooms/' + pendingInviteRoom).remove();
+            const rid = pendingInviteRoom;
+
+            // 如果我是房東拒絕路人
+            if (myRole === 'player1') {
+                db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "" });
+                if (pendingRequesterUid) {
+                    db.ref(`users/${pendingRequesterUid}`).update({ inviteRoom: "DECLINED" });
+                }
+            } else {
+                // 如果我是被邀請者拒絕房東
+                db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "" });
+                db.ref('rooms/' + rid).remove();
+            }
         }
 
+        // 處理建立房間 (將狀態更新為 matching，並記錄房間號)
         function handleCreate() {
             let rid = document.getElementById('room-input').value;
             if (!rid) rid = Math.floor(1000 + Math.random() * 9000).toString();
             if (!/^\d{4}$/.test(rid)) return alert("請輸入 4 位數字房號");
 
             myRole = 'player1';
-            if(myUid) db.ref(`users/${myUid}`).update({ status: "playing" });
+            // 🌟 核心變動：建立房間但還沒對手時，大廳改為 matching 狀態
+            if(myUid) db.ref(`users/${myUid}`).update({ status: "matching", matchingRoomId: rid });
             
             db.ref('rooms/' + rid).set({
                 player1: { name: myCurrentName, choice: "", status: "waiting" },
                 player2: { name: "等待中...", choice: "", status: "waiting" },
                 scores: { player1: 0, player2: 0 },
                 history: []
-            }).then(() => enterRoom(rid)).catch(err => alert("建立失敗：" + err.message));
+            }).then(() => {
+                enterRoom(rid);
+                // 額外監聽：如果是路人被核准進房，大廳狀態會被房東改成被動接收
+                listenForHostApproval();
+            });
+        }
+
+        // 房東核准後的被動進房跳轉機制
+        function listenForHostApproval() {
+            if(!myUid) return;
+            db.ref(`users/${myUid}/inviteRoom`).on('value', (snapshot) => {
+                const val = snapshot.val();
+                if (val && val.startsWith("ACCEPTED_")) {
+                    const rid = val.split("_")[1];
+                    db.ref(`users/${myUid}`).update({ inviteRoom: "", status: "playing", matchingRoomId: "" });
+                    // 此時資料庫已被房東核准解鎖，直接進房
+                } else if (val === "DECLINED") {
+                    alert("❌ 申請失敗，房主婉拒了你的切磋請求。");
+                    db.ref(`users/${myUid}`).update({ inviteRoom: "" });
+                    quitRoom();
+                }
+            });
         }
 
         function handleJoin() {
@@ -276,13 +339,10 @@
 
             const roomRef = db.ref('rooms/' + rid);
             roomRef.once('value', (snap) => {
-                if (!snap.exists()) {
-                    return alert("❌ 找不到該房間，請點擊「建立房間」！");
-                }
+                if (!snap.exists()) return alert("❌ 找不到該房間，請點擊「建立房間」！");
                 
                 roomRef.transaction((currentData) => {
                     if (currentData === null) return; 
-                    
                     if (currentData.player1.status === "waiting" && (currentData.player1.name === "玩家1" || currentData.player1.name === "" || currentData.player1.name === "等待中...")) {
                         currentData.player1.name = myCurrentName;
                         return currentData;
@@ -294,7 +354,7 @@
                     }
                 }, (error, committed, snapshot) => {
                     if (error || !committed) {
-                        alert("❌ 房間已滿或發生衝突，請稍後再試！");
+                        alert("❌ 房間已滿或發生衝突！");
                     } else {
                         const data = snapshot.val();
                         myRole = (data.player1.name === myCurrentName) ? 'player1' : 'player2';
@@ -314,21 +374,19 @@
         }
 
         function quitRoom() {
-            if(myUid) db.ref(`users/${myUid}`).update({ status: "idle" });
+            if(myUid) db.ref(`users/${myUid}`).update({ status: "idle", matchingRoomId: "" });
             location.reload();
         }
 
         function listenRoom(rid) {
             db.ref('rooms/' + rid).on('value', (snapshot) => {
                 const data = snapshot.val();
-                
                 if(!data) {
-                    alert("⚠️ 房間已被關閉或對方已離開。");
+                    alert("⚠️ 房間已被關閉或對手已退出。");
                     quitRoom();
                     return;
                 }
 
-                // 更新名字與記分板
                 localPlayerNames.player1 = data.player1.name;
                 localPlayerNames.player2 = data.player2.name;
                 document.getElementById('p1-name').innerText = data.player1.name;
@@ -337,11 +395,15 @@
                 document.getElementById('p2-score').innerText = data.scores?.player2 || 0;
                 updateHistoryUI(data.history || []);
 
-                // 🌟 動態更新對戰大標題 🌟
+                // 動態對戰大標題
                 const titleEl = document.getElementById('battle-title');
                 if (data.player2.name === "等待中..." || data.player2.name === "") {
                     titleEl.innerHTML = `<span class="text-indigo-600">${data.player1.name}</span> <span class="text-gray-400 text-sm mx-1">的房間</span>`;
                 } else {
+                    // 🌟 自動修正：一旦有對手正式進來，幫房東將大廳狀態由 matching 強制同步為 playing
+                    if (myRole === 'player1') {
+                        db.ref(`users/${myUid}`).update({ status: "playing", matchingRoomId: "" });
+                    }
                     titleEl.innerHTML = `<span class="text-indigo-600">${data.player1.name}</span> <span class="text-gray-300 text-sm mx-2">VS</span> <span class="text-emerald-600">${data.player2.name}</span>`;
                 }
 
