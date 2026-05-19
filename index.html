@@ -520,8 +520,16 @@
 
             // 🏆 BO3 按鈕狀態切換
             const btn = document.getElementById('rematch-btn');
-            if (currentTournamentId && scores && (scores.player1 >= 2 || scores.player2 >= 2)) {
-                const iWonMatch = (scores.player1 >= 2 && isP1) || (scores.player2 >= 2 && !isP1);
+            const p1Score = parseInt(document.getElementById('p1-score').innerText);
+            const p2Score = parseInt(document.getElementById('p2-score').innerText);
+            
+            // 判斷是否已經有任何一方達到 2 分
+            const isMatchOver = (p1Score >= 2 || p2Score >= 2);
+            
+            if (currentTournamentId && isMatchOver) {
+                const isP1 = (myRole === 'player1');
+                const iWonMatch = (p1Score >= 2 && isP1) || (p2Score >= 2 && !isP1);
+                
                 resLabel.innerText = iWonMatch ? "🏆 晉級下一輪！" : "💀 你被淘汰了...";
                 resLabel.className = iWonMatch ? "text-3xl font-black italic mb-6 text-amber-500" : "text-3xl font-black italic mb-6 text-gray-500";
                 
