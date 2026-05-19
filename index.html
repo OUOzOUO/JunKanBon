@@ -113,7 +113,6 @@
         let myUid = null;
         let myCurrentName = "";
 
-        // 初始化大廳登錄 (優化：給予預設值，確保一進來就成功 push)
         function initLobby() {
             myCurrentName = localStorage.getItem('rps_nickname') || "玩家_" + Math.floor(1000 + Math.random() * 9000);
             document.getElementById('name-input').value = myCurrentName;
@@ -131,7 +130,7 @@
         function updateLobbyName() {
             if(!myUid) return;
             myCurrentName = document.getElementById('name-input').value || "匿名玩家";
-            localStorage.setItem('rps_nickname', myCurrentName); // 記住暱稱
+            localStorage.setItem('rps_nickname', myCurrentName);
             db.ref(`users/${myUid}`).update({ name: myCurrentName });
         }
 
@@ -219,7 +218,6 @@
             });
         }
 
-        // 建立房間 (修正版：強制複寫防卡死)
         function handleCreate() {
             let rid = document.getElementById('room-input').value;
             if (!rid) rid = Math.floor(1000 + Math.random() * 9000).toString();
@@ -228,7 +226,6 @@
             myRole = 'player1';
             if(myUid) db.ref(`users/${myUid}`).update({ status: "playing" });
             
-            // 強制直接建立（複寫舊房），徹底解決「無法建立」的問題
             db.ref('rooms/' + rid).set({
                 player1: { name: myCurrentName, choice: "", status: "waiting" },
                 player2: { name: "等待中...", choice: "", status: "waiting" },
@@ -340,12 +337,14 @@
             });
         }
 
+        // 🛠️ 核心 Bug 修復點：根據 myRole 完美對應「你出了」與「對手出」
         function showResult(p1Move, p2Move) {
             document.getElementById('result-area').classList.remove('hidden');
             const resLabel = document.getElementById('final-result');
             const winner = judgeWinner(p1Move, p2Move);
-
             const isP1 = (myRole === 'player1');
+
+            // 確保 Player 1 看到 P1 自己的拳，Player 2 看到 P2 自己的拳
             document.getElementById('my-move').innerText = moveEmoji(isP1 ? p1Move : p2Move);
             document.getElementById('opp-move').innerText = moveEmoji(isP1 ? p2Move : p1Move);
 
@@ -353,6 +352,7 @@
                 resLabel.innerText = "平手！🤝";
                 resLabel.className = "text-3xl font-black italic mb-6 text-slate-400";
             } else {
+                // 精確判定目前視角是否獲勝
                 const iWon = (winner === 'p1' && isP1) || (winner === 'p2' && !isP1);
                 resLabel.innerText = iWon ? "你贏了！🔥" : "你輸了...💀";
                 resLabel.className = iWon ? "text-3xl font-black italic mb-6 text-red-500" : "text-3xl font-black italic mb-6 text-slate-500";
@@ -389,7 +389,6 @@
 
         function moveEmoji(m) { return m === '石頭' ? '✊' : (m === '剪刀' ? '✌️' : '🖐️'); }
 
-        // 確保視窗載入完成後安全啟動大廳
         window.addEventListener('DOMContentLoaded', initLobby);
     </script>
 
