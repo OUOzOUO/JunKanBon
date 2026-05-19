@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>猜猜猜拳</title>
+    <title>猜猜猜拳 - 星街專輯爭霸賽</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
@@ -29,7 +29,7 @@
             <div class="space-y-4 mb-6 text-left">
                 <div>
                     <label class="block text-gray-500 text-xs mb-1 ml-1">你的暱稱</label>
-                    <input id="name-input" type="text" maxlength="10" placeholder="輸入大名 (例如：猜拳大師)" oninput="updateLobbyName()"
+                    <input id="name-input" type="text" maxlength="10" placeholder="輸入大名 (例如：星詠者)" oninput="updateLobbyName()"
                         class="w-full border-2 border-gray-100 p-3 rounded-lg focus:border-indigo-500 outline-none transition">
                 </div>
                 <div>
@@ -46,10 +46,10 @@
             <p class="mt-4 text-[10px] text-gray-400">※ 點擊建立後，你的狀態會顯示為「匹配中」</p>
 
             <div class="mt-8 pt-6 border-t border-gray-100">
-                <h3 class="text-sm font-bold text-amber-500 mb-3 text-left ml-1">🏆 星接專輯爭霸賽 </h3>
+                <h3 class="text-sm font-bold text-amber-500 mb-3 text-left ml-1">☄️ 星街專輯爭霸賽 (最多 10 人)</h3>
                 <div class="grid grid-cols-2 gap-4">
-                    <button onclick="createTournament()" class="bg-amber-500 text-white py-3 rounded-lg hover:bg-amber-600 transition font-bold shadow-md">開辦賽事</button>
-                    <button onclick="joinTournament()" class="bg-orange-400 text-white py-3 rounded-lg hover:bg-orange-500 transition font-bold shadow-md">加入賽事</button>
+                    <button onclick="createTournament()" class="bg-amber-500 text-white py-3 rounded-lg hover:bg-amber-600 transition font-bold shadow-md">開辦爭霸賽</button>
+                    <button onclick="joinTournament()" class="bg-orange-400 text-white py-3 rounded-lg hover:bg-orange-500 transition font-bold shadow-md">加入爭霸賽</button>
                 </div>
             </div>
         </div>
@@ -138,7 +138,7 @@
         let pendingInviteRoom = "";
         let pendingRequesterUid = ""; 
 
-        // 🏆 錦標賽變數
+        // 🏆 爭霸賽變數
         let currentTournamentId = null;
         let isTournamentHost = false;
 
@@ -168,7 +168,7 @@
                 const users = snapshot.val() || {};
                 const listContainer = document.getElementById('lobby-user-list');
                 
-                // 如果目前進了錦標賽，右側要交給「錦標賽配對表」來畫，大廳清單先不刷新
+                // 如果目前進了爭霸賽，右側要交給「爭霸賽配對表」來畫，大廳清單先不刷新
                 if (currentTournamentId) return;
 
                 listContainer.innerHTML = "";
@@ -499,7 +499,7 @@
 
 
         // ==========================================
-        // 🏆 錦標賽 (Tournament) 核心模組 
+        // ☄️ 星街專輯爭霸賽 (Tournament) 核心模組 
         // ==========================================
 
         function createTournament() {
@@ -522,7 +522,7 @@
 
         function joinTournament() {
             let tid = document.getElementById('room-input').value;
-            if (!tid) return alert("請輸入賽事房號！");
+            if (!tid) return alert("請輸入爭霸賽房號！");
 
             const tRef = db.ref('tournaments/' + tid);
             tRef.transaction((currentData) => {
@@ -538,7 +538,7 @@
 
             }, (error, committed, snapshot) => {
                 if (!committed) {
-                    alert("❌ 賽事已滿 10 人或該賽事未創辦！");
+                    alert("❌ 爭霸賽已滿 10 人或該賽事未創辦！");
                 } else {
                     isTournamentHost = false;
                     enterTournamentLobby(tid);
@@ -549,7 +549,7 @@
         function enterTournamentLobby(tid) {
             currentTournamentId = tid;
             document.getElementById('setup-screen').innerHTML = `
-                <h1 class="text-2xl font-bold mb-4 text-amber-500">🏆 賽事大廳：${tid}</h1>
+                <h1 class="text-2xl font-bold mb-4 text-amber-500">🏆 爭霸賽大廳：${tid}</h1>
                 <p class="text-sm text-gray-500 mb-4">等待玩家加入中... (最多 10 人)</p>
                 <div id="tourney-players" class="flex flex-wrap justify-center gap-2 mb-6"></div>
                 ${isTournamentHost ? `<button onclick="startTournamentMatchmaking()" class="w-full bg-amber-500 text-white py-3 rounded-lg font-bold shadow-md animate-pulse">馬上開始配對！</button>` : `<p class="text-amber-600 font-bold">等待房主開始配對...</p>`}
@@ -610,7 +610,7 @@
         function renderBrackets(matches) {
             const listContainer = document.getElementById('lobby-user-list');
             const headline = document.querySelector('#lobby-user-list').parentElement.querySelector('h2 span:first-child');
-            if(headline) headline.innerText = "🏆 賽事配對表";
+            if(headline) headline.innerText = "🏆 爭霸賽配對表";
             
             listContainer.innerHTML = Object.keys(matches).map(matchKey => {
                 const m = matches[matchKey];
