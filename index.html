@@ -17,7 +17,7 @@
             <div class="space-y-4 mb-6 text-left">
                 <div>
                     <label class="block text-gray-500 text-xs mb-1 ml-1">你的暱稱</label>
-                    <input id="name-input" type="text" maxlength="10" placeholder="例如：猜拳大師" oninput="updateLobbyName()"
+                    <input id="name-input" type="text" maxlength="10" placeholder="輸入大名 (例如：猜拳大師)" oninput="updateLobbyName()"
                         class="w-full border-2 border-gray-100 p-3 rounded-lg focus:border-indigo-500 outline-none transition">
                 </div>
                 <div>
@@ -90,7 +90,7 @@
             <span id="online-count" class="text-xs bg-emerald-50 px-2 py-0.5 rounded text-emerald-700">0 人</span>
         </h2>
         <div id="lobby-user-list" class="space-y-2 flex-1 overflow-y-auto max-h-60 md:max-h-none">
-            <p class="text-xs text-gray-400 italic text-center py-4">請先輸入暱稱以加入大廳...</p>
+            <p class="text-xs text-gray-400 italic text-center py-4">正在載入大廳...</p>
         </div>
     </div>
 
@@ -110,35 +110,31 @@
         let hasJudged = false;
         let localPlayerNames = { player1: "玩家1", player2: "玩家2" };
         
-        // 📢 大廳在線機制所需變數
         let myUid = null;
-        let myCurrentName = "匿名玩家";
+        let myCurrentName = "";
 
-        // 初始化大廳登錄
+        // 初始化大廳登錄 (優化：給予預設值，確保一進來就成功 push)
         function initLobby() {
-            // 自動生成一個專屬的 uid (斷線即消失)
-            const userRef = db.ref('users').push();
-            myUid = userRef.key;
-            myCurrentName = document.getElementById('name-input').value || "玩家_" + Math.floor(1000+Math.random()*9000);
+            myCurrentName = localStorage.getItem('rps_nickname') || "玩家_" + Math.floor(1000 + Math.random() * 9000);
             document.getElementById('name-input').value = myCurrentName;
 
-            // 寫入上線狀態，並設定斷線時自動刪除
+            const userRef = db.ref('users').push();
+            myUid = userRef.key;
+
             userRef.set({ name: myCurrentName, status: "idle", inviteRoom: "" });
             userRef.onDisconnect().remove();
 
-            // 監聽所有人名單
             listenLobbyUsers();
-            // 監聽是否有收到別人的對戰邀請
             listenMyInvites(userRef);
         }
 
         function updateLobbyName() {
             if(!myUid) return;
             myCurrentName = document.getElementById('name-input').value || "匿名玩家";
+            localStorage.setItem('rps_nickname', myCurrentName); // 記住暱稱
             db.ref(`users/${myUid}`).update({ name: myCurrentName });
         }
 
-        // 監聽大廳玩家名單並渲染 UI
         function listenLobbyUsers() {
             db.ref('users').on('value', (snapshot) => {
                 const users = snapshot.val() || {};
@@ -147,7 +143,7 @@
 
                 let count = 0;
                 Object.keys(users).forEach(uid => {
-                    if (uid === myUid) return; // 不顯示自己
+                    if (uid === myUid) return; 
                     count++;
                     const user = users[uid];
                     
@@ -160,7 +156,7 @@
                     }
 
                     const userEl = document.createElement('div');
-                    userEl.className = "flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-100 transition hover:bg-slate-100/50";
+                    userEl.className = "flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-100";
                     userEl.innerHTML = `
                         <div class="flex items-center gap-2 truncate">
                             <span class="font-semibold text-sm truncate">${user.name}</span>
@@ -178,42 +174,33 @@
             });
         }
 
-        // 發送對戰邀請
         function sendInvite(targetUid) {
-            // 隨機產生一個 4 位數對戰房號
             const randomRoomId = Math.floor(1000 + Math.random() * 9000).toString();
-            
-            // 先幫自己建立好房間
             myRole = 'player1';
+            
             db.ref('rooms/' + randomRoomId).set({
                 player1: { name: myCurrentName, choice: "", status: "waiting" },
                 player2: { name: "等待中...", choice: "", status: "waiting" },
                 scores: { player1: 0, player2: 0 },
                 history: []
             }).then(() => {
-                // 將房號塞給對方，觸發對方的彈窗通知
                 db.ref(`users/${targetUid}`).update({ inviteRoom: randomRoomId, inviteFromName: myCurrentName });
-                db.ref(`users/${myUid}`).update({ status: "playing" });
+                if(myUid) db.ref(`users/${myUid}`).update({ status: "playing" });
                 enterRoom(randomRoomId);
             });
         }
 
-        // 監聽自己是否收到邀請
         function listenMyInvites(myUserRef) {
             myUserRef.child('inviteRoom').on('value', (snapshot) => {
                 const rid = snapshot.val();
                 if (!rid) return;
 
-                // 抓取是誰邀請的
                 myUserRef.child('inviteFromName').once('value', (nameSnap) => {
                     const hostName = nameSnap.val() || "神祕玩家";
                     
-                    // 彈出確認視窗
                     if (confirm(`⚔️ 玩家「${hostName}」向你下戰帖！是否進入房間 ${rid} 迎戰？`)) {
-                        // 同意：清除邀請標籤，改狀態為 playing，並執行 Transaction 擠進房間
                         myUserRef.update({ inviteRoom: "", inviteFromName: "", status: "playing" });
                         
-                        // 執行防撞加入
                         const roomRef = db.ref('rooms/' + rid);
                         roomRef.transaction((roomData) => {
                             if (!roomData) return;
@@ -225,7 +212,6 @@
                             else alert("進房失敗，房間可能已被關閉。");
                         });
                     } else {
-                        // 拒絕：直接清空，並把對方的房間炸掉或留空
                         myUserRef.update({ inviteRoom: "", inviteFromName: "" });
                         db.ref('rooms/' + rid).remove();
                     }
@@ -233,29 +219,24 @@
             });
         }
 
-        // 建立房間
+        // 建立房間 (修正版：強制複寫防卡死)
         function handleCreate() {
             let rid = document.getElementById('room-input').value;
             if (!rid) rid = Math.floor(1000 + Math.random() * 9000).toString();
             if (!/^\d{4}$/.test(rid)) return alert("請輸入 4 位數字房號");
 
-            db.ref('rooms/' + rid).once('value', (s) => {
-                if (s.exists()) {
-                    handleJoin(); 
-                } else {
-                    myRole = 'player1';
-                    db.ref(`users/${myUid}`).update({ status: "playing" });
-                    db.ref('rooms/' + rid).set({
-                        player1: { name: myCurrentName, choice: "", status: "waiting" },
-                        player2: { name: "等待中...", choice: "", status: "waiting" },
-                        scores: { player1: 0, player2: 0 },
-                        history: []
-                    }).then(() => enterRoom(rid));
-                }
-            });
+            myRole = 'player1';
+            if(myUid) db.ref(`users/${myUid}`).update({ status: "playing" });
+            
+            // 強制直接建立（複寫舊房），徹底解決「無法建立」的問題
+            db.ref('rooms/' + rid).set({
+                player1: { name: myCurrentName, choice: "", status: "waiting" },
+                player2: { name: "等待中...", choice: "", status: "waiting" },
+                scores: { player1: 0, player2: 0 },
+                history: []
+            }).then(() => enterRoom(rid)).catch(err => alert("建立失敗：" + err.message));
         }
 
-        // 加入房間 (Transaction 防 3 人擠入)
         function handleJoin() {
             const rid = document.getElementById('room-input').value;
             if (!rid || !/^\d{4}$/.test(rid)) return alert("請輸入 4 位數房號");
@@ -263,7 +244,7 @@
             const roomRef = db.ref('rooms/' + rid);
             roomRef.transaction((currentData) => {
                 if (currentData === null) return;
-                if (currentData.player1.status === "waiting" && (currentData.player1.name === "玩家1" || currentData.player1.name === "")) {
+                if (currentData.player1.status === "waiting" && (currentData.player1.name === "玩家1" || currentData.player1.name === "" || currentData.player1.name === "等待中...")) {
                     currentData.player1.name = myCurrentName;
                     return currentData;
                 } else if (currentData.player2.status === "waiting" && (currentData.player2.name === "等待中..." || currentData.player2.name === "")) {
@@ -278,7 +259,7 @@
                 } else {
                     const data = snapshot.val();
                     myRole = (data.player1.name === myCurrentName) ? 'player1' : 'player2';
-                    db.ref(`users/${myUid}`).update({ status: "playing" });
+                    if(myUid) db.ref(`users/${myUid}`).update({ status: "playing" });
                     enterRoom(rid);
                 }
             });
@@ -408,8 +389,8 @@
 
         function moveEmoji(m) { return m === '石頭' ? '✊' : (m === '剪刀' ? '✌️' : '🖐️'); }
 
-        // 啟動大廳機制
-        window.onload = initLobby;
+        // 確保視窗載入完成後安全啟動大廳
+        window.addEventListener('DOMContentLoaded', initLobby);
     </script>
 
     <style>
