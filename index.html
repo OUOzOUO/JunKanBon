@@ -311,10 +311,6 @@
             }
         }
 
-        // ==========================================
-        // 一般房間邏輯
-        // ==========================================
-
         function handleCreate() {
             let rid = document.getElementById('room-input').value.trim();
             if (!rid) rid = Math.floor(1000 + Math.random() * 9000).toString();
@@ -399,7 +395,7 @@
                 if (data.player2.name === "等待中..." || data.player2.name === "") {
                     titleEl.innerHTML = `<span class="text-indigo-600">${data.player1.name}</span> <span class="text-gray-400 text-sm mx-1">的房間</span>`;
                 } else {
-                    if (myRole === 'player1') {
+                    if (myRole === 'player1' && !currentTournamentId) {
                         db.ref(`users/${myUid}`).update({ status: "playing", matchingRoomId: "" });
                     }
                     titleEl.innerHTML = `<span class="text-indigo-600">${data.player1.name}</span> <span class="text-gray-300 text-sm mx-2">VS</span> <span class="text-emerald-600">${data.player2.name}</span>`;
@@ -431,24 +427,23 @@
             });
         }
 
-        // 🌟 更新出拳邏輯：加入電腦 AI 自動反應機制
+        // 🌟 遊戲核心：新增電腦自動出拳機制
         function play(move) {
             if (navigator.vibrate) navigator.vibrate(50);
             hasJudged = false;
             
-            // 我方出拳
             db.ref(`rooms/${currentRoom}/${myRole}`).update({ choice: move, status: 'ready' });
             
-            // 如果我是一手(P1)，且對手是電腦，則觸發電腦出拳
-            if (myRole === 'player1' && localPlayerNames.player2 === "🤖 電腦AI") {
+            // 偵測對手是不是電腦，如果是，電腦在 0.8 秒後隨機出拳
+            const oppRole = myRole === 'player1' ? 'player2' : 'player1';
+            if (localPlayerNames[oppRole] === "🤖 電腦AI") {
                 const choices = ['石頭', '剪刀', '布'];
                 const botMove = choices[Math.floor(Math.random() * 3)];
-                // 假裝電腦思考 0.8 秒後出拳
                 setTimeout(() => {
-                    db.ref(`rooms/${currentRoom}/player2`).update({ choice: botMove, status: 'ready' });
+                    db.ref(`rooms/${currentRoom}/${oppRole}`).update({ choice: botMove, status: 'ready' });
                 }, 800);
             }
-            
+
             document.getElementById('controls').classList.add('pointer-events-none', 'opacity-50');
         }
 
@@ -487,8 +482,17 @@
             }
         }
 
+        // 🌟 自動續戰：如果對手是電腦，電腦會自動幫按「下一局」
         function requestRematch() {
             db.ref(`rooms/${currentRoom}/${myRole}`).update({ status: 'rematch' });
+            
+            const oppRole = myRole === 'player1' ? 'player2' : 'player1';
+            if (localPlayerNames[oppRole] === "🤖 電腦AI") {
+                setTimeout(() => {
+                    db.ref(`rooms/${currentRoom}/${oppRole}`).update({ status: 'rematch' });
+                }, 600);
+            }
+
             document.getElementById('rematch-btn').innerText = "已就緒...";
             document.getElementById('rematch-btn').classList.add('opacity-50', 'pointer-events-none');
         }
@@ -609,7 +613,7 @@
                     ).join('');
                 }
 
-                // 🌟 當狀態變為 playing 時，除了畫配對表，還要檢查自己的身分並飛進子房間！
+                // 檢查是否已開始並切換房間
                 if (data.status === "playing" && data.matches) {
                     renderBrackets(data.matches);
                     checkAndJoinTournamentMatch(data.matches, tid);
@@ -627,6 +631,7 @@
             });
         }
 
+        // 🌟 核心轉移修復：房主一次性建好所有子房間
         function startTournamentMatchmaking() {
             db.ref('tournaments/' + currentTournamentId).once('value', (snapshot) => {
                 const data = snapshot.val();
@@ -636,34 +641,51 @@
                     const botUid = "BOT_" + Math.random().toString(36).substr(2, 9);
                     db.ref(`tournaments/${currentTournamentId}/players/${botUid}`).set({ name: "🤖 電腦AI" });
                     playerUids.push(botUid);
+                    data.players[botUid] = { name: "🤖 電腦AI" }; 
                 }
 
                 playerUids = playerUids.sort(() => Math.random() - 0.5);
 
                 let matches = {};
+                let roomUpdates = {}; 
+
                 for (let i = 0; i < playerUids.length; i += 2) {
                     const p1Uid = playerUids[i];
                     const p2Uid = playerUids[i+1];
-                    // 🌟 記錄 Uid 以便後續傳送玩家使用
-                    matches[`match_${i/2 + 1}`] = {
+                    const p1Name = data.players[p1Uid]?.name || "🤖 電腦AI";
+                    const p2Name = data.players[p2Uid]?.name || "🤖 電腦AI";
+                    const matchKey = `match_${i/2 + 1}`;
+
+                    matches[matchKey] = {
                         p1_uid: p1Uid,
                         p2_uid: p2Uid,
-                        p1_name: data.players[p1Uid]?.name || "🤖 電腦AI",
-                        p2_name: data.players[p2Uid]?.name || "🤖 電腦AI",
+                        p1_name: p1Name,
+                        p2_name: p2Name,
                         status: "pending", 
                         bo3_score: "0 : 0",
                         winner: ""
                     };
+
+                    // 🛠️ 房主負責把大家要打架的房間直接建好！
+                    roomUpdates[`${currentTournamentId}_${matchKey}`] = {
+                        player1: { name: p1Name, choice: "", status: "waiting" },
+                        player2: { name: p2Name, choice: "", status: "waiting" },
+                        scores: { player1: 0, player2: 0 },
+                        history: ["☄️ 星街專輯爭霸賽 - 準備開戰！"]
+                    };
                 }
 
-                db.ref('tournaments/' + currentTournamentId).update({
-                    status: "playing",
-                    matches: matches
+                // 一次性寫入 Firebase
+                db.ref('rooms').update(roomUpdates).then(() => {
+                    db.ref('tournaments/' + currentTournamentId).update({
+                        status: "playing",
+                        matches: matches
+                    });
                 });
             });
         }
 
-        // 🌟 傳送門機制：檢查配對表，如果是自己就進入專屬的 1v1 子房間
+        // 🌟 極簡化跳轉邏輯：房間已經存在，讀了直接進去就好！
         function checkAndJoinTournamentMatch(matches, tid) {
             if (!matches) return;
             
@@ -673,42 +695,12 @@
                 if (m.p1_uid === myUid || m.p2_uid === myUid) {
                     if (m.status === "pending" || m.status === "playing") {
                         const subRoomId = `${tid}_${matchKey}`; 
-                        
-                        // 避免重複進房
                         if (currentRoom === subRoomId) return;
 
                         myRole = (m.p1_uid === myUid) ? 'player1' : 'player2';
-                        
-                        // 由 P1 負責把對戰房間的地基建好
-                        if (myRole === 'player1') {
-                            const oppName = m.p2_uid.startsWith("BOT_") ? "🤖 電腦AI" : m.p2_name;
-                            db.ref('rooms/' + subRoomId).once('value', s => {
-                                if (!s.exists()) {
-                                    db.ref('rooms/' + subRoomId).set({
-                                        player1: { name: myCurrentName, choice: "", status: "waiting" },
-                                        player2: { name: oppName, choice: "", status: "waiting" },
-                                        scores: { player1: 0, player2: 0 },
-                                        history: [],
-                                        isTournament: true,
-                                        tournamentId: tid,
-                                        matchKey: matchKey
-                                    }).then(() => {
-                                        enterRoom(subRoomId);
-                                    });
-                                } else {
-                                    enterRoom(subRoomId);
-                                }
-                            });
-                        } else {
-                            // P2 延遲 1.5 秒再進去，等 P1 把房間建好
-                            setTimeout(() => {
-                                db.ref(`rooms/${subRoomId}/player2`).update({
-                                    name: myCurrentName, choice: "", status: "waiting"
-                                }).then(() => {
-                                    enterRoom(subRoomId);
-                                });
-                            }, 1500);
-                        }
+                        // 切換狀態為遊玩中，並直接飛入房間
+                        db.ref(`users/${myUid}`).update({ status: "playing", matchingRoomId: "" });
+                        setTimeout(() => enterRoom(subRoomId), 500);
                     }
                 }
             });
