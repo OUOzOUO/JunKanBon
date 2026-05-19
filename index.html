@@ -8,77 +8,89 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 </head>
-<body class="bg-slate-100 flex flex-col items-center justify-center min-h-screen p-4 font-sans text-slate-800">
+<body class="bg-slate-100 flex flex-col md:flex-row items-center md:items-start justify-center min-h-screen p-4 gap-4 font-sans text-slate-800">
 
-    <div id="setup-screen" class="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm text-center border-t-4 border-indigo-500">
-        <h1 class="text-2xl font-bold mb-6 text-indigo-600">✌️ 重拳出擊</h1>
-        
-        <div class="space-y-4 mb-6 text-left">
-            <div>
-                <label class="block text-gray-500 text-xs mb-1 ml-1">你的暱稱</label>
-                <input id="name-input" type="text" maxlength="10" placeholder="例如：你的暱稱" 
-                    class="w-full border-2 border-gray-100 p-3 rounded-lg focus:border-indigo-500 outline-none transition">
+    <div class="w-full max-w-sm flex flex-col justify-center min-h-[500px]">
+        <div id="setup-screen" class="bg-white p-8 rounded-xl shadow-lg w-full text-center border-t-4 border-indigo-500">
+            <h1 class="text-2xl font-bold mb-6 text-indigo-600">✌️ 重拳出擊</h1>
+            
+            <div class="space-y-4 mb-6 text-left">
+                <div>
+                    <label class="block text-gray-500 text-xs mb-1 ml-1">你的暱稱</label>
+                    <input id="name-input" type="text" maxlength="10" placeholder="例如：猜拳大師" oninput="updateLobbyName()"
+                        class="w-full border-2 border-gray-100 p-3 rounded-lg focus:border-indigo-500 outline-none transition">
+                </div>
+                <div>
+                    <label class="block text-gray-500 text-xs mb-1 ml-1">4 位數房號</label>
+                    <input id="room-input" type="text" maxlength="4" placeholder="例如：8888" 
+                        class="w-full border-2 border-gray-100 p-3 rounded-lg text-center text-2xl font-mono tracking-widest focus:border-indigo-500 outline-none transition">
+                </div>
             </div>
-            <div>
-                <label class="block text-gray-500 text-xs mb-1 ml-1">4 位數房號</label>
-                <input id="room-input" type="text" maxlength="4" placeholder="例如：8888" 
-                    class="w-full border-2 border-gray-100 p-3 rounded-lg text-center text-2xl font-mono tracking-widest focus:border-indigo-500 outline-none transition">
+
+            <div class="grid grid-cols-2 gap-4">
+                <button onclick="handleCreate()" class="bg-indigo-500 text-white py-3 rounded-lg hover:bg-indigo-600 transition font-bold shadow-md">建立房間</button>
+                <button onclick="handleJoin()" class="bg-emerald-500 text-white py-3 rounded-lg hover:bg-emerald-600 font-bold shadow-md">加入房間</button>
             </div>
+            <p class="mt-4 text-[10px] text-gray-400">※ 輸入暱稱後，右側會自動登錄在線玩家名單</p>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
-            <button onclick="handleCreate()" class="bg-indigo-500 text-white py-3 rounded-lg hover:bg-indigo-600 transition font-bold shadow-md">建立房間</button>
-            <button onclick="handleJoin()" class="bg-emerald-500 text-white py-3 rounded-lg hover:bg-emerald-600 font-bold shadow-md">加入房間</button>
+        <div id="game-screen" class="hidden w-full animate-pop-in">
+            <div class="bg-white p-6 rounded-xl shadow-lg text-center border-t-4 border-indigo-500 mb-4">
+                <div class="flex justify-between items-center mb-4">
+                    <span id="display-room-id" class="text-xs font-mono text-gray-400 bg-slate-100 px-2 py-1 rounded">房間：----</span>
+                    <button onclick="quitRoom()" class="text-xs text-red-400 hover:text-red-600 transition">退出房間</button>
+                </div>
+
+                <div class="flex justify-around items-center bg-slate-50 py-3 rounded-lg mb-6 border border-slate-100">
+                    <div class="text-center w-5/12">
+                        <p id="p1-name" class="text-[10px] text-gray-400 uppercase truncate font-bold">Player 1</p>
+                        <p id="p1-score" class="text-3xl font-black text-indigo-600">0</p>
+                    </div>
+                    <div class="text-gray-300 font-light text-xl">VS</div>
+                    <div class="text-center w-5/12">
+                        <p id="p2-name" class="text-[10px] text-gray-400 uppercase truncate font-bold">Player 2</p>
+                        <p id="p2-score" class="text-3xl font-black text-emerald-600">0</p>
+                    </div>
+                </div>
+
+                <div id="status-msg" class="text-lg font-semibold mb-6 text-indigo-900 h-8 flex items-center justify-center">等待對手...</div>
+                
+                <div id="controls" class="grid grid-cols-3 gap-4 mb-8">
+                    <button onclick="play('石頭')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-50 transition active:scale-95 border border-slate-100 shadow-sm">✊</button>
+                    <button onclick="play('剪刀')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-50 transition active:scale-95 border border-slate-100 shadow-sm">✌️</button>
+                    <button onclick="play('布')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-50 transition active:scale-95 border border-slate-100 shadow-sm">🖐️</button>
+                </div>
+
+                <div id="result-area" class="hidden border-t pt-6">
+                    <div class="flex justify-around mb-6">
+                        <div class="text-center">
+                            <p class="text-[10px] text-gray-400 mb-1 uppercase">你出了</p>
+                            <p id="my-move" class="text-5xl">?</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-[10px] text-gray-400 mb-1 uppercase">對方出</p>
+                            <p id="opp-move" class="text-5xl">?</p>
+                        </div>
+                    </div>
+                    <div id="final-result" class="text-3xl font-black italic mb-6"></div>
+                    <button id="rematch-btn" onclick="requestRematch()" class="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 shadow-lg transition">下一局</button>
+                </div>
+            </div>
+
+            <div class="bg-white/70 backdrop-blur-sm p-4 rounded-xl shadow-inner border border-white max-h-40 overflow-y-auto">
+                <h3 class="text-[10px] font-bold text-gray-400 uppercase mb-2">對戰紀錄 (最近 5 筆)</h3>
+                <div id="history-list" class="space-y-1 text-xs font-mono"></div>
+            </div>
         </div>
-        <p class="mt-4 text-[10px] text-gray-400">※ 若房號已存在，點擊「建立」將自動改為「加入」</p>
     </div>
 
-    <div id="game-screen" class="hidden w-full max-w-sm animate-pop-in">
-        <div class="bg-white p-6 rounded-xl shadow-lg text-center border-t-4 border-indigo-500 mb-4">
-            <div class="flex justify-between items-center mb-4">
-                <span id="display-room-id" class="text-xs font-mono text-gray-400 bg-slate-100 px-2 py-1 rounded">房間：----</span>
-                <button onclick="location.reload()" class="text-xs text-red-400 hover:text-red-600 transition">退出房間</button>
-            </div>
-
-            <div class="flex justify-around items-center bg-slate-50 py-3 rounded-lg mb-6 border border-slate-100">
-                <div class="text-center w-5/12">
-                    <p id="p1-name" class="text-[10px] text-gray-400 uppercase truncate font-bold">Player 1</p>
-                    <p id="p1-score" class="text-3xl font-black text-indigo-600">0</p>
-                </div>
-                <div class="text-gray-300 font-light text-xl">VS</div>
-                <div class="text-center w-5/12">
-                    <p id="p2-name" class="text-[10px] text-gray-400 uppercase truncate font-bold">Player 2</p>
-                    <p id="p2-score" class="text-3xl font-black text-emerald-600">0</p>
-                </div>
-            </div>
-
-            <div id="status-msg" class="text-lg font-semibold mb-6 text-indigo-900 h-8 flex items-center justify-center">等待對手...</div>
-            
-            <div id="controls" class="grid grid-cols-3 gap-4 mb-8">
-                <button onclick="play('石頭')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-50 transition active:scale-95 border border-slate-100 shadow-sm">✊</button>
-                <button onclick="play('剪刀')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-50 transition active:scale-95 border border-slate-100 shadow-sm">✌️</button>
-                <button onclick="play('布')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-50 transition active:scale-95 border border-slate-100 shadow-sm">🖐️</button>
-            </div>
-
-            <div id="result-area" class="hidden border-t pt-6">
-                <div class="flex justify-around mb-6">
-                    <div class="text-center">
-                        <p class="text-[10px] text-gray-400 mb-1 uppercase">你出了</p>
-                        <p id="my-move" class="text-5xl">?</p>
-                    </div>
-                    <div class="text-center">
-                        <p class="text-[10px] text-gray-400 mb-1 uppercase">對方出</p>
-                        <p id="opp-move" class="text-5xl">?</p>
-                    </div>
-                </div>
-                <div id="final-result" class="text-3xl font-black italic mb-6"></div>
-                <button id="rematch-btn" onclick="requestRematch()" class="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 shadow-lg transition">下一局</button>
-            </div>
-        </div>
-
-        <div class="bg-white/70 backdrop-blur-sm p-4 rounded-xl shadow-inner border border-white max-h-40 overflow-y-auto">
-            <h3 class="text-[10px] font-bold text-gray-400 uppercase mb-2">對戰紀錄 (最近 5 筆)</h3>
-            <div id="history-list" class="space-y-1 text-xs font-mono"></div>
+    <div class="w-full max-w-sm bg-white p-6 rounded-xl shadow-lg border-t-4 border-emerald-500 self-stretch flex flex-col">
+        <h2 class="text-sm font-bold text-emerald-600 mb-4 flex items-center justify-between">
+            <span>🟢 線上在線玩家</span>
+            <span id="online-count" class="text-xs bg-emerald-50 px-2 py-0.5 rounded text-emerald-700">0 人</span>
+        </h2>
+        <div id="lobby-user-list" class="space-y-2 flex-1 overflow-y-auto max-h-60 md:max-h-none">
+            <p class="text-xs text-gray-400 italic text-center py-4">請先輸入暱稱以加入大廳...</p>
         </div>
     </div>
 
@@ -97,9 +109,132 @@
         let myRole = null; 
         let hasJudged = false;
         let localPlayerNames = { player1: "玩家1", player2: "玩家2" };
+        
+        // 📢 大廳在線機制所需變數
+        let myUid = null;
+        let myCurrentName = "匿名玩家";
 
+        // 初始化大廳登錄
+        function initLobby() {
+            // 自動生成一個專屬的 uid (斷線即消失)
+            const userRef = db.ref('users').push();
+            myUid = userRef.key;
+            myCurrentName = document.getElementById('name-input').value || "玩家_" + Math.floor(1000+Math.random()*9000);
+            document.getElementById('name-input').value = myCurrentName;
+
+            // 寫入上線狀態，並設定斷線時自動刪除
+            userRef.set({ name: myCurrentName, status: "idle", inviteRoom: "" });
+            userRef.onDisconnect().remove();
+
+            // 監聽所有人名單
+            listenLobbyUsers();
+            // 監聽是否有收到別人的對戰邀請
+            listenMyInvites(userRef);
+        }
+
+        function updateLobbyName() {
+            if(!myUid) return;
+            myCurrentName = document.getElementById('name-input').value || "匿名玩家";
+            db.ref(`users/${myUid}`).update({ name: myCurrentName });
+        }
+
+        // 監聽大廳玩家名單並渲染 UI
+        function listenLobbyUsers() {
+            db.ref('users').on('value', (snapshot) => {
+                const users = snapshot.val() || {};
+                const listContainer = document.getElementById('lobby-user-list');
+                listContainer.innerHTML = "";
+
+                let count = 0;
+                Object.keys(users).forEach(uid => {
+                    if (uid === myUid) return; // 不顯示自己
+                    count++;
+                    const user = users[uid];
+                    
+                    let statusBadge = `<span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">閒置</span>`;
+                    let inviteBtn = `<button onclick="sendInvite('${uid}')" class="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1 rounded transition font-medium shadow-sm">邀請</button>`;
+                    
+                    if (user.status === "playing") {
+                        statusBadge = `<span class="text-[10px] bg-red-50 text-red-500 px-1.5 py-0.5 rounded font-bold">戰鬥中</span>`;
+                        inviteBtn = `<button disabled class="text-xs bg-gray-100 text-gray-400 px-3 py-1 rounded cursor-not-allowed">忙碌</button>`;
+                    }
+
+                    const userEl = document.createElement('div');
+                    userEl.className = "flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-100 transition hover:bg-slate-100/50";
+                    userEl.innerHTML = `
+                        <div class="flex items-center gap-2 truncate">
+                            <span class="font-semibold text-sm truncate">${user.name}</span>
+                            ${statusBadge}
+                        </div>
+                        <div>${inviteBtn}</div>
+                    `;
+                    listContainer.appendChild(userEl);
+                });
+
+                document.getElementById('online-count').innerText = (count + 1) + " 人";
+                if(count === 0) {
+                    listContainer.innerHTML = `<p class="text-xs text-gray-400 italic text-center py-4">目前沒有其他玩家在線...</p>`;
+                }
+            });
+        }
+
+        // 發送對戰邀請
+        function sendInvite(targetUid) {
+            // 隨機產生一個 4 位數對戰房號
+            const randomRoomId = Math.floor(1000 + Math.random() * 9000).toString();
+            
+            // 先幫自己建立好房間
+            myRole = 'player1';
+            db.ref('rooms/' + randomRoomId).set({
+                player1: { name: myCurrentName, choice: "", status: "waiting" },
+                player2: { name: "等待中...", choice: "", status: "waiting" },
+                scores: { player1: 0, player2: 0 },
+                history: []
+            }).then(() => {
+                // 將房號塞給對方，觸發對方的彈窗通知
+                db.ref(`users/${targetUid}`).update({ inviteRoom: randomRoomId, inviteFromName: myCurrentName });
+                db.ref(`users/${myUid}`).update({ status: "playing" });
+                enterRoom(randomRoomId);
+            });
+        }
+
+        // 監聽自己是否收到邀請
+        function listenMyInvites(myUserRef) {
+            myUserRef.child('inviteRoom').on('value', (snapshot) => {
+                const rid = snapshot.val();
+                if (!rid) return;
+
+                // 抓取是誰邀請的
+                myUserRef.child('inviteFromName').once('value', (nameSnap) => {
+                    const hostName = nameSnap.val() || "神祕玩家";
+                    
+                    // 彈出確認視窗
+                    if (confirm(`⚔️ 玩家「${hostName}」向你下戰帖！是否進入房間 ${rid} 迎戰？`)) {
+                        // 同意：清除邀請標籤，改狀態為 playing，並執行 Transaction 擠進房間
+                        myUserRef.update({ inviteRoom: "", inviteFromName: "", status: "playing" });
+                        
+                        // 執行防撞加入
+                        const roomRef = db.ref('rooms/' + rid);
+                        roomRef.transaction((roomData) => {
+                            if (!roomData) return;
+                            roomData.player2.name = myCurrentName;
+                            myRole = 'player2';
+                            return roomData;
+                        }, (err, committed) => {
+                            if (committed) enterRoom(rid);
+                            else alert("進房失敗，房間可能已被關閉。");
+                        });
+                    } else {
+                        // 拒絕：直接清空，並把對方的房間炸掉或留空
+                        myUserRef.update({ inviteRoom: "", inviteFromName: "" });
+                        db.ref('rooms/' + rid).remove();
+                    }
+                });
+            });
+        }
+
+        // 建立房間
         function handleCreate() {
-            const name = document.getElementById('name-input').value || "玩家1";
             let rid = document.getElementById('room-input').value;
             if (!rid) rid = Math.floor(1000 + Math.random() * 9000).toString();
             if (!/^\d{4}$/.test(rid)) return alert("請輸入 4 位數字房號");
@@ -109,8 +244,9 @@
                     handleJoin(); 
                 } else {
                     myRole = 'player1';
+                    db.ref(`users/${myUid}`).update({ status: "playing" });
                     db.ref('rooms/' + rid).set({
-                        player1: { name: name, choice: "", status: "waiting" },
+                        player1: { name: myCurrentName, choice: "", status: "waiting" },
                         player2: { name: "等待中...", choice: "", status: "waiting" },
                         scores: { player1: 0, player2: 0 },
                         history: []
@@ -119,25 +255,32 @@
             });
         }
 
+        // 加入房間 (Transaction 防 3 人擠入)
         function handleJoin() {
-            const name = document.getElementById('name-input').value || "玩家2";
             const rid = document.getElementById('room-input').value;
             if (!rid || !/^\d{4}$/.test(rid)) return alert("請輸入 4 位數房號");
 
-            db.ref('rooms/' + rid).once('value', (s) => {
-                if (!s.exists()) return alert("找不到房間，請點擊建立");
-                const data = s.val();
-                
-                if (data.player1.status === "waiting" && (data.player1.name === "玩家1" || data.player1.name === "")) {
-                    myRole = 'player1';
-                } else if (data.player2.status === "waiting" || data.player2.name === "等待中...") {
-                    myRole = 'player2';
+            const roomRef = db.ref('rooms/' + rid);
+            roomRef.transaction((currentData) => {
+                if (currentData === null) return;
+                if (currentData.player1.status === "waiting" && (currentData.player1.name === "玩家1" || currentData.player1.name === "")) {
+                    currentData.player1.name = myCurrentName;
+                    return currentData;
+                } else if (currentData.player2.status === "waiting" && (currentData.player2.name === "等待中..." || currentData.player2.name === "")) {
+                    currentData.player2.name = myCurrentName;
+                    return currentData;
                 } else {
-                    return alert("房間已滿！");
+                    return; 
                 }
-
-                db.ref(`rooms/${rid}/${myRole}`).update({ name: name, status: "waiting", choice: "" })
-                  .then(() => enterRoom(rid));
+            }, (error, committed, snapshot) => {
+                if (!committed) {
+                    alert("❌ 房間已滿或找不到該房間！");
+                } else {
+                    const data = snapshot.val();
+                    myRole = (data.player1.name === myCurrentName) ? 'player1' : 'player2';
+                    db.ref(`users/${myUid}`).update({ status: "playing" });
+                    enterRoom(rid);
+                }
             });
         }
 
@@ -147,6 +290,11 @@
             document.getElementById('game-screen').classList.remove('hidden');
             document.getElementById('display-room-id').innerText = "房間：" + rid;
             listenRoom(rid);
+        }
+
+        function quitRoom() {
+            if(myUid) db.ref(`users/${myUid}`).update({ status: "idle" });
+            location.reload();
         }
 
         function listenRoom(rid) {
@@ -165,7 +313,6 @@
                 const p1 = data.player1;
                 const p2 = data.player2;
                 const me = data[myRole];
-                const opp = data[(myRole === 'player1') ? 'player2' : 'player1'];
 
                 if (p1.status === 'rematch' && p2.status === 'rematch') {
                     if (myRole === 'player1') resetGameData();
@@ -260,6 +407,9 @@
         }
 
         function moveEmoji(m) { return m === '石頭' ? '✊' : (m === '剪刀' ? '✌️' : '🖐️'); }
+
+        // 啟動大廳機制
+        window.onload = initLobby;
     </script>
 
     <style>
@@ -268,4 +418,3 @@
     </style>
 </body>
 </html>
-
