@@ -176,7 +176,6 @@
                     if (uid === myUid) return; 
                     
                     const user = users[uid];
-                    // 防呆：濾掉壞掉的資料
                     if (!user || !user.name || user.name === "undefined") return;
 
                     count++;
@@ -312,6 +311,10 @@
             }
         }
 
+        // ==========================================
+        // 一般房間邏輯
+        // ==========================================
+
         function handleCreate() {
             let rid = document.getElementById('room-input').value.trim();
             if (!rid) rid = Math.floor(1000 + Math.random() * 9000).toString();
@@ -428,10 +431,24 @@
             });
         }
 
+        // 🌟 更新出拳邏輯：加入電腦 AI 自動反應機制
         function play(move) {
             if (navigator.vibrate) navigator.vibrate(50);
             hasJudged = false;
+            
+            // 我方出拳
             db.ref(`rooms/${currentRoom}/${myRole}`).update({ choice: move, status: 'ready' });
+            
+            // 如果我是一手(P1)，且對手是電腦，則觸發電腦出拳
+            if (myRole === 'player1' && localPlayerNames.player2 === "🤖 電腦AI") {
+                const choices = ['石頭', '剪刀', '布'];
+                const botMove = choices[Math.floor(Math.random() * 3)];
+                // 假裝電腦思考 0.8 秒後出拳
+                setTimeout(() => {
+                    db.ref(`rooms/${currentRoom}/player2`).update({ choice: botMove, status: 'ready' });
+                }, 800);
+            }
+            
             document.getElementById('controls').classList.add('pointer-events-none', 'opacity-50');
         }
 
@@ -531,7 +548,6 @@
             });
         }
 
-        // 🌟 修正點 1：將 transaction 拔除，改為安全的 once + set 確保必定能加入
         function joinTournament() {
             let tid = document.getElementById('room-input').value.trim();
             if (!tid) return alert("請輸入爭霸賽房號！");
@@ -558,7 +574,6 @@
                     return alert("❌ 爭霸賽已滿 10 人！");
                 }
 
-                // 直接將自己寫入 players 名單
                 db.ref(`tournaments/${tid}/players/${myUid}`).set({
                     name: myCurrentName
                 }).then(() => {
@@ -572,7 +587,6 @@
 
         function enterTournamentLobby(tid) {
             currentTournamentId = tid;
-            // 🌟 修正點 2：加入「退出大廳」的按鈕 (leaveTournament)
             document.getElementById('setup-screen').innerHTML = `
                 <div class="flex justify-between items-start mb-4">
                     <h1 class="text-2xl font-bold text-amber-500">☄️ 爭霸賽大廳：${tid}</h1>
@@ -595,22 +609,21 @@
                     ).join('');
                 }
 
+                // 🌟 當狀態變為 playing 時，除了畫配對表，還要檢查自己的身分並飛進子房間！
                 if (data.status === "playing" && data.matches) {
                     renderBrackets(data.matches);
+                    checkAndJoinTournamentMatch(data.matches, tid);
                 }
             });
         }
 
-        // 🌟 新增退出爭霸賽函數
         function leaveTournament() {
             if (!currentTournamentId || !myUid) return;
             
-            // 從賽事名單中移除自己
             db.ref(`tournaments/${currentTournamentId}/players/${myUid}`).remove().then(() => {
-                // 如果是房主退出的話，會稍微麻煩一點，這邊簡單處理直接退回首頁
                 currentTournamentId = null;
                 isTournamentHost = false;
-                location.reload(); // 重新載入網頁恢復到原始介面
+                location.reload(); 
             });
         }
 
@@ -631,7 +644,10 @@
                 for (let i = 0; i < playerUids.length; i += 2) {
                     const p1Uid = playerUids[i];
                     const p2Uid = playerUids[i+1];
+                    // 🌟 記錄 Uid 以便後續傳送玩家使用
                     matches[`match_${i/2 + 1}`] = {
+                        p1_uid: p1Uid,
+                        p2_uid: p2Uid,
                         p1_name: data.players[p1Uid]?.name || "🤖 電腦AI",
                         p2_name: data.players[p2Uid]?.name || "🤖 電腦AI",
                         status: "pending", 
@@ -644,6 +660,57 @@
                     status: "playing",
                     matches: matches
                 });
+            });
+        }
+
+        // 🌟 傳送門機制：檢查配對表，如果是自己就進入專屬的 1v1 子房間
+        function checkAndJoinTournamentMatch(matches, tid) {
+            if (!matches) return;
+            
+            Object.keys(matches).forEach(matchKey => {
+                const m = matches[matchKey];
+                
+                if (m.p1_uid === myUid || m.p2_uid === myUid) {
+                    if (m.status === "pending" || m.status === "playing") {
+                        const subRoomId = `${tid}_${matchKey}`; 
+                        
+                        // 避免重複進房
+                        if (currentRoom === subRoomId) return;
+
+                        myRole = (m.p1_uid === myUid) ? 'player1' : 'player2';
+                        
+                        // 由 P1 負責把對戰房間的地基建好
+                        if (myRole === 'player1') {
+                            const oppName = m.p2_uid.startsWith("BOT_") ? "🤖 電腦AI" : m.p2_name;
+                            db.ref('rooms/' + subRoomId).once('value', s => {
+                                if (!s.exists()) {
+                                    db.ref('rooms/' + subRoomId).set({
+                                        player1: { name: myCurrentName, choice: "", status: "waiting" },
+                                        player2: { name: oppName, choice: "", status: "waiting" },
+                                        scores: { player1: 0, player2: 0 },
+                                        history: [],
+                                        isTournament: true,
+                                        tournamentId: tid,
+                                        matchKey: matchKey
+                                    }).then(() => {
+                                        enterRoom(subRoomId);
+                                    });
+                                } else {
+                                    enterRoom(subRoomId);
+                                }
+                            });
+                        } else {
+                            // P2 延遲 1.5 秒再進去，等 P1 把房間建好
+                            setTimeout(() => {
+                                db.ref(`rooms/${subRoomId}/player2`).update({
+                                    name: myCurrentName, choice: "", status: "waiting"
+                                }).then(() => {
+                                    enterRoom(subRoomId);
+                                });
+                            }, 1500);
+                        }
+                    }
+                }
             });
         }
 
@@ -661,7 +728,7 @@
                             <span class="text-xs text-amber-500 mx-2">VS</span>
                             <span class="${m.p2_name.includes('電腦') ? 'text-gray-400' : 'text-emerald-600'}">${m.p2_name}</span>
                         </div>
-                        <div class="text-center mt-2 text-[10px] text-gray-400">第一輪 BO3 狀態：${m.status === 'pending' ? '準備開打' : '已結束'}</div>
+                        <div class="text-center mt-2 text-[10px] text-gray-400">第一輪對戰：${m.status === 'pending' ? '準備開打' : '開戰中'}</div>
                     </div>
                 `;
             }).join('');
