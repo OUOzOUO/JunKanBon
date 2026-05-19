@@ -10,8 +10,20 @@
 </head>
 <body class="bg-slate-100 flex flex-col md:flex-row items-center md:items-start justify-center min-h-screen p-4 gap-4 font-sans text-slate-800">
 
+    <div id="invite-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 animate-pop-in">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-11/12 max-w-sm text-center border-t-4 border-indigo-500">
+            <div class="text-5xl mb-4 animate-bounce">⚔️</div>
+            <h3 class="text-xl font-black text-gray-800 mb-2">收到對戰邀請！</h3>
+            <p class="text-gray-600 mb-8 text-sm">玩家 <span id="invite-host-name" class="font-bold text-indigo-600 text-base"></span> 向你下戰帖，是否迎戰？</p>
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="acceptInvite()" class="bg-indigo-500 text-white py-3 rounded-xl font-bold hover:bg-indigo-600 transition shadow-md">🔥 接受挑戰</button>
+                <button onclick="declineInvite()" class="bg-gray-100 text-gray-500 py-3 rounded-xl font-bold hover:bg-gray-200 transition">婉拒</button>
+            </div>
+        </div>
+    </div>
+
     <div class="w-full max-w-sm flex flex-col justify-center min-h-[500px]">
-        <div id="setup-screen" class="bg-white p-8 rounded-xl shadow-lg w-full text-center border-t-4 border-indigo-500">
+        <div id="setup-screen" class="bg-white p-8 rounded-xl shadow-lg w-full text-center border-t-4 border-indigo-500 relative">
             <h1 class="text-2xl font-bold mb-6 text-indigo-600">✌️ 重拳出擊</h1>
             
             <div class="space-y-4 mb-6 text-left">
@@ -38,7 +50,7 @@
             <div class="bg-white p-6 rounded-xl shadow-lg text-center border-t-4 border-indigo-500 mb-4">
                 <div class="flex justify-between items-center mb-4">
                     <span id="display-room-id" class="text-xs font-mono text-gray-400 bg-slate-100 px-2 py-1 rounded">房間：----</span>
-                    <button onclick="quitRoom()" class="text-xs text-red-400 hover:text-red-600 transition">退出房間</button>
+                    <button onclick="quitRoom()" class="text-xs text-red-400 hover:text-red-600 transition font-bold">退出房間</button>
                 </div>
 
                 <div class="flex justify-around items-center bg-slate-50 py-3 rounded-lg mb-6 border border-slate-100">
@@ -86,7 +98,7 @@
 
     <div class="w-full max-w-sm bg-white p-6 rounded-xl shadow-lg border-t-4 border-emerald-500 self-stretch flex flex-col">
         <h2 class="text-sm font-bold text-emerald-600 mb-4 flex items-center justify-between">
-            <span>🟢 線上在線玩家</span>
+            <span>🟢 線上玩家大廳</span>
             <span id="online-count" class="text-xs bg-emerald-50 px-2 py-0.5 rounded text-emerald-700">0 人</span>
         </h2>
         <div id="lobby-user-list" class="space-y-2 flex-1 overflow-y-auto max-h-60 md:max-h-none">
@@ -112,6 +124,9 @@
         
         let myUid = null;
         let myCurrentName = "";
+
+        // 邀請狀態暫存
+        let pendingInviteRoom = "";
 
         function initLobby() {
             myCurrentName = localStorage.getItem('rps_nickname') || "玩家_" + Math.floor(1000 + Math.random() * 9000);
@@ -147,11 +162,11 @@
                     const user = users[uid];
                     
                     let statusBadge = `<span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">閒置</span>`;
-                    let inviteBtn = `<button onclick="sendInvite('${uid}')" class="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1 rounded transition font-medium shadow-sm">邀請</button>`;
+                    let inviteBtn = `<button onclick="sendInvite('${uid}')" class="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded transition font-medium shadow-sm">邀請</button>`;
                     
                     if (user.status === "playing") {
                         statusBadge = `<span class="text-[10px] bg-red-50 text-red-500 px-1.5 py-0.5 rounded font-bold">戰鬥中</span>`;
-                        inviteBtn = `<button disabled class="text-xs bg-gray-100 text-gray-400 px-3 py-1 rounded cursor-not-allowed">忙碌</button>`;
+                        inviteBtn = `<button disabled class="text-xs bg-gray-100 text-gray-400 px-3 py-1.5 rounded cursor-not-allowed">忙碌</button>`;
                     }
 
                     const userEl = document.createElement('div');
@@ -168,7 +183,7 @@
 
                 document.getElementById('online-count').innerText = (count + 1) + " 人";
                 if(count === 0) {
-                    listContainer.innerHTML = `<p class="text-xs text-gray-400 italic text-center py-4">目前沒有其他玩家在線...</p>`;
+                    listContainer.innerHTML = `<p class="text-xs text-gray-400 italic text-center py-4">大廳目前空無一人，等待對手加入...</p>`;
                 }
             });
         }
@@ -189,33 +204,56 @@
             });
         }
 
+        // 🌟 監聽邀請：改用自訂 UI Modal
         function listenMyInvites(myUserRef) {
             myUserRef.child('inviteRoom').on('value', (snapshot) => {
                 const rid = snapshot.val();
-                if (!rid) return;
+                if (!rid) {
+                    // 若房號被清空(例如對方取消)，隱藏視窗
+                    document.getElementById('invite-modal').classList.add('hidden');
+                    return;
+                }
 
                 myUserRef.child('inviteFromName').once('value', (nameSnap) => {
                     const hostName = nameSnap.val() || "神祕玩家";
+                    pendingInviteRoom = rid;
                     
-                    if (confirm(`⚔️ 玩家「${hostName}」向你下戰帖！是否進入房間 ${rid} 迎戰？`)) {
-                        myUserRef.update({ inviteRoom: "", inviteFromName: "", status: "playing" });
-                        
-                        const roomRef = db.ref('rooms/' + rid);
-                        roomRef.transaction((roomData) => {
-                            if (!roomData) return;
-                            roomData.player2.name = myCurrentName;
-                            myRole = 'player2';
-                            return roomData;
-                        }, (err, committed) => {
-                            if (committed) enterRoom(rid);
-                            else alert("進房失敗，房間可能已被關閉。");
-                        });
-                    } else {
-                        myUserRef.update({ inviteRoom: "", inviteFromName: "" });
-                        db.ref('rooms/' + rid).remove();
-                    }
+                    // 顯示漂亮的自訂彈窗
+                    document.getElementById('invite-host-name').innerText = hostName;
+                    document.getElementById('invite-modal').classList.remove('hidden');
                 });
             });
+        }
+
+        // 🟢 接受邀請
+        function acceptInvite() {
+            document.getElementById('invite-modal').classList.add('hidden');
+            if (!pendingInviteRoom) return;
+
+            const rid = pendingInviteRoom;
+            db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", status: "playing" });
+            
+            const roomRef = db.ref('rooms/' + rid);
+            roomRef.transaction((roomData) => {
+                if (!roomData) return;
+                roomData.player2.name = myCurrentName;
+                myRole = 'player2';
+                return roomData;
+            }, (err, committed) => {
+                if (committed) enterRoom(rid);
+                else alert("進房失敗，房間可能已被關閉。");
+            });
+        }
+
+        // 🔴 拒絕邀請
+        function declineInvite() {
+            document.getElementById('invite-modal').classList.add('hidden');
+            if (!pendingInviteRoom) return;
+            
+            // 清除自己的邀請狀態
+            db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "" });
+            // 把對方剛建好的房間刪除，這會觸發對方的 listenRoom 斷線保護
+            db.ref('rooms/' + pendingInviteRoom).remove();
         }
 
         function handleCreate() {
@@ -278,7 +316,13 @@
         function listenRoom(rid) {
             db.ref('rooms/' + rid).on('value', (snapshot) => {
                 const data = snapshot.val();
-                if(!data) return;
+                
+                // 🌟 保護機制：如果資料不見了(被拒絕或手動刪除)，自動踢出房間並通知
+                if(!data) {
+                    alert("⚠️ 房間已被關閉或對方已離開。");
+                    quitRoom();
+                    return;
+                }
 
                 localPlayerNames.player1 = data.player1.name;
                 localPlayerNames.player2 = data.player2.name;
@@ -337,14 +381,12 @@
             });
         }
 
-        // 🛠️ 核心 Bug 修復點：根據 myRole 完美對應「你出了」與「對手出」
         function showResult(p1Move, p2Move) {
             document.getElementById('result-area').classList.remove('hidden');
             const resLabel = document.getElementById('final-result');
             const winner = judgeWinner(p1Move, p2Move);
             const isP1 = (myRole === 'player1');
 
-            // 確保 Player 1 看到 P1 自己的拳，Player 2 看到 P2 自己的拳
             document.getElementById('my-move').innerText = moveEmoji(isP1 ? p1Move : p2Move);
             document.getElementById('opp-move').innerText = moveEmoji(isP1 ? p2Move : p1Move);
 
@@ -352,7 +394,6 @@
                 resLabel.innerText = "平手！🤝";
                 resLabel.className = "text-3xl font-black italic mb-6 text-slate-400";
             } else {
-                // 精確判定目前視角是否獲勝
                 const iWon = (winner === 'p1' && isP1) || (winner === 'p2' && !isP1);
                 resLabel.innerText = iWon ? "你贏了！🔥" : "你輸了...💀";
                 resLabel.className = iWon ? "text-3xl font-black italic mb-6 text-red-500" : "text-3xl font-black italic mb-6 text-slate-500";
