@@ -44,6 +44,14 @@
                 <button onclick="handleJoin()" class="bg-emerald-500 text-white py-3 rounded-lg hover:bg-emerald-600 font-bold shadow-md">加入房間</button>
             </div>
             <p class="mt-4 text-[10px] text-gray-400">※ 點擊建立後，你的狀態會顯示為「匹配中」</p>
+
+            <div class="mt-8 pt-6 border-t border-gray-100">
+                <h3 class="text-sm font-bold text-amber-500 mb-3 text-left ml-1">🏆 星接專輯爭霸賽 </h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <button onclick="createTournament()" class="bg-amber-500 text-white py-3 rounded-lg hover:bg-amber-600 transition font-bold shadow-md">開辦賽事</button>
+                    <button onclick="joinTournament()" class="bg-orange-400 text-white py-3 rounded-lg hover:bg-orange-500 transition font-bold shadow-md">加入賽事</button>
+                </div>
+            </div>
         </div>
 
         <div id="game-screen" class="hidden w-full animate-pop-in">
@@ -130,6 +138,10 @@
         let pendingInviteRoom = "";
         let pendingRequesterUid = ""; 
 
+        // 🏆 錦標賽變數
+        let currentTournamentId = null;
+        let isTournamentHost = false;
+
         function initLobby() {
             myCurrentName = localStorage.getItem('rps_nickname') || "玩家_" + Math.floor(1000 + Math.random() * 9000);
             document.getElementById('name-input').value = myCurrentName;
@@ -155,8 +167,11 @@
             db.ref('users').on('value', (snapshot) => {
                 const users = snapshot.val() || {};
                 const listContainer = document.getElementById('lobby-user-list');
-                listContainer.innerHTML = "";
+                
+                // 如果目前進了錦標賽，右側要交給「錦標賽配對表」來畫，大廳清單先不刷新
+                if (currentTournamentId) return;
 
+                listContainer.innerHTML = "";
                 let count = 0;
                 Object.keys(users).forEach(uid => {
                     if (uid === myUid) return; 
@@ -219,7 +234,6 @@
             });
         }
 
-        // 🌟 修復核心：聰明的邀請監聽器
         function listenMyInvites(myUserRef) {
             myUserRef.child('inviteRoom').on('value', (snapshot) => {
                 const rid = snapshot.val();
@@ -228,13 +242,10 @@
                     return;
                 }
 
-                // 情境 1：如果字串開頭是 ACCEPTED_，代表申請被房東同意了！
                 if (rid.startsWith("ACCEPTED_")) {
                     const actualRid = rid.split("_")[1];
                     myUserRef.update({ inviteRoom: "", status: "playing" });
-                    myRole = 'player2'; // 申請者以 2P 身分進去
-                    
-                    // 寫入名字並直接進房，不跳任何視窗
+                    myRole = 'player2'; 
                     db.ref(`rooms/${actualRid}/player2`).update({
                         name: myCurrentName, choice: "", status: "waiting"
                     }).then(() => {
@@ -243,14 +254,12 @@
                     return; 
                 }
 
-                // 情境 2：如果被房東婉拒了
                 if (rid === "DECLINED") {
                     alert("❌ 申請失敗，房主婉拒了你的切磋請求。");
                     myUserRef.update({ inviteRoom: "" });
                     return; 
                 }
 
-                // 情境 3：正常收到邀請 或 收到別人的匹配請求
                 myUserRef.once('value', (userSnap) => {
                     const uData = userSnap.val();
                     const hostName = uData.inviteFromName || "神祕玩家";
@@ -269,13 +278,11 @@
             const rid = pendingInviteRoom;
             
             if (myRole === 'player1') {
-                // 我是房東：核准挑戰者
                 db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "", status: "playing" });
                 if (pendingRequesterUid) {
                     db.ref(`users/${pendingRequesterUid}`).update({ inviteRoom: "ACCEPTED_" + rid });
                 }
             } else {
-                // 我是大廳的閒人：接受別人發的一對一邀請
                 db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "", status: "playing" });
                 db.ref(`rooms/${rid}/player2`).update({
                     name: myCurrentName, choice: "", status: "waiting"
@@ -292,13 +299,11 @@
             const rid = pendingInviteRoom;
 
             if (myRole === 'player1') {
-                // 我是房東，拒絕挑戰者
                 db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "" });
                 if (pendingRequesterUid) {
                     db.ref(`users/${pendingRequesterUid}`).update({ inviteRoom: "DECLINED" });
                 }
             } else {
-                // 我是閒人，拒絕別人邀請
                 db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "" });
                 db.ref('rooms/' + rid).remove();
             }
@@ -384,7 +389,6 @@
                 document.getElementById('p2-score').innerText = data.scores?.player2 || 0;
                 updateHistoryUI(data.history || []);
 
-                // 動態對戰大標題
                 const titleEl = document.getElementById('battle-title');
                 if (data.player2.name === "等待中..." || data.player2.name === "") {
                     titleEl.innerHTML = `<span class="text-indigo-600">${data.player1.name}</span> <span class="text-gray-400 text-sm mx-1">的房間</span>`;
@@ -492,6 +496,136 @@
         }
 
         function moveEmoji(m) { return m === '石頭' ? '✊' : (m === '剪刀' ? '✌️' : '🖐️'); }
+
+
+        // ==========================================
+        // 🏆 錦標賽 (Tournament) 核心模組 
+        // ==========================================
+
+        function createTournament() {
+            let tid = document.getElementById('room-input').value;
+            if (!tid) tid = "T" + Math.floor(1000 + Math.random() * 9000).toString();
+            if (!myUid) return alert("請先輸入暱稱載入大廳！");
+
+            isTournamentHost = true;
+            db.ref('tournaments/' + tid).set({
+                hostUid: myUid,
+                status: "waiting", 
+                players: {
+                    [myUid]: { name: myCurrentName }
+                },
+                matches: {}
+            }).then(() => {
+                enterTournamentLobby(tid);
+            });
+        }
+
+        function joinTournament() {
+            let tid = document.getElementById('room-input').value;
+            if (!tid) return alert("請輸入賽事房號！");
+
+            const tRef = db.ref('tournaments/' + tid);
+            tRef.transaction((currentData) => {
+                if (currentData === null) return;
+                if (currentData.status !== "waiting") return; 
+
+                const playerCount = Object.keys(currentData.players || {}).length;
+                if (playerCount >= 10) return; 
+
+                if (!currentData.players) currentData.players = {};
+                currentData.players[myUid] = { name: myCurrentName };
+                return currentData;
+
+            }, (error, committed, snapshot) => {
+                if (!committed) {
+                    alert("❌ 賽事已滿 10 人或該賽事未創辦！");
+                } else {
+                    isTournamentHost = false;
+                    enterTournamentLobby(tid);
+                }
+            });
+        }
+
+        function enterTournamentLobby(tid) {
+            currentTournamentId = tid;
+            document.getElementById('setup-screen').innerHTML = `
+                <h1 class="text-2xl font-bold mb-4 text-amber-500">🏆 賽事大廳：${tid}</h1>
+                <p class="text-sm text-gray-500 mb-4">等待玩家加入中... (最多 10 人)</p>
+                <div id="tourney-players" class="flex flex-wrap justify-center gap-2 mb-6"></div>
+                ${isTournamentHost ? `<button onclick="startTournamentMatchmaking()" class="w-full bg-amber-500 text-white py-3 rounded-lg font-bold shadow-md animate-pulse">馬上開始配對！</button>` : `<p class="text-amber-600 font-bold">等待房主開始配對...</p>`}
+            `;
+
+            db.ref('tournaments/' + tid).on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (!data) return;
+
+                const pList = document.getElementById('tourney-players');
+                if(pList && data.players) {
+                    pList.innerHTML = Object.values(data.players).map(p => 
+                        `<span class="bg-gray-100 px-3 py-1 rounded-full text-sm font-semibold">${p.name}</span>`
+                    ).join('');
+                }
+
+                if (data.status === "playing" && data.matches) {
+                    renderBrackets(data.matches);
+                }
+            });
+        }
+
+        function startTournamentMatchmaking() {
+            db.ref('tournaments/' + currentTournamentId).once('value', (snapshot) => {
+                const data = snapshot.val();
+                let playerUids = Object.keys(data.players);
+                
+                // 補位 AI 邏輯
+                if (playerUids.length % 2 !== 0) {
+                    const botUid = "BOT_" + Math.random().toString(36).substr(2, 9);
+                    db.ref(`tournaments/${currentTournamentId}/players/${botUid}`).set({ name: "🤖 電腦AI" });
+                    playerUids.push(botUid);
+                }
+
+                // 洗牌打亂
+                playerUids = playerUids.sort(() => Math.random() - 0.5);
+
+                let matches = {};
+                for (let i = 0; i < playerUids.length; i += 2) {
+                    const p1Uid = playerUids[i];
+                    const p2Uid = playerUids[i+1];
+                    matches[`match_${i/2 + 1}`] = {
+                        p1_name: data.players[p1Uid]?.name || "🤖 電腦AI",
+                        p2_name: data.players[p2Uid]?.name || "🤖 電腦AI",
+                        status: "pending", 
+                        bo3_score: "0 : 0",
+                        winner: ""
+                    };
+                }
+
+                db.ref('tournaments/' + currentTournamentId).update({
+                    status: "playing",
+                    matches: matches
+                });
+            });
+        }
+
+        function renderBrackets(matches) {
+            const listContainer = document.getElementById('lobby-user-list');
+            const headline = document.querySelector('#lobby-user-list').parentElement.querySelector('h2 span:first-child');
+            if(headline) headline.innerText = "🏆 賽事配對表";
+            
+            listContainer.innerHTML = Object.keys(matches).map(matchKey => {
+                const m = matches[matchKey];
+                return `
+                    <div class="bg-amber-50 p-3 rounded-lg border border-amber-200 mb-2 animate-pop-in">
+                        <div class="flex justify-between items-center font-bold text-sm">
+                            <span class="${m.p1_name.includes('電腦') ? 'text-gray-400' : 'text-indigo-600'}">${m.p1_name}</span>
+                            <span class="text-xs text-amber-500 mx-2">VS</span>
+                            <span class="${m.p2_name.includes('電腦') ? 'text-gray-400' : 'text-emerald-600'}">${m.p2_name}</span>
+                        </div>
+                        <div class="text-center mt-2 text-[10px] text-gray-400">第一輪 BO3 狀態：${m.status === 'pending' ? '準備開打' : '已結束'}</div>
+                    </div>
+                `;
+            }).join('');
+        }
 
         window.addEventListener('DOMContentLoaded', initLobby);
     </script>
