@@ -473,21 +473,21 @@
             let newScores = { ...oldScores };
             if (res === 'p1') newScores.player1++;
             if (res === 'p2') newScores.player2++;
-
+        
             const winName = res === 'draw' ? '平手' : (res === 'p1' ? localPlayerNames.player1 : localPlayerNames.player2);
             const record = `${moveEmoji(p1Move)} VS ${moveEmoji(p2Move)} - ${winName}勝`;
             
-            // 寫入房間分數 (這會再次觸發 listenRoom)
+            // 寫入房間分數
             db.ref(`rooms/${currentRoom}`).update({
-                scores: newScores, history: [record, ...oldHistory].slice(0, 5)
+                scores: newScores, 
+                history: [record, ...oldHistory].slice(0, 5)
             });
-
-            // 🏆 爭霸賽分數同步與晉級判定
+        
+            // 🏆 爭霸賽邏輯 (確保這裡的括號正確閉合)
             if (currentTournamentId) {
                 db.ref(`rooms/${currentRoom}/matchKey`).once('value', s => {
                     const matchKey = s.val();
                     if (matchKey) {
-                        // 判斷是否已經有一方達到 2 分 (BO3)
                         const isMatchOver = (newScores.player1 >= 2 || newScores.player2 >= 2);
                         
                         db.ref(`tournaments/${currentTournamentId}/matches/${matchKey}`).update({
@@ -495,16 +495,10 @@
                             status: isMatchOver ? "finished" : "playing",
                             winner: isMatchOver ? (newScores.player1 >= 2 ? localPlayerNames.player1 : localPlayerNames.player2) : ""
                         });
-            
-                        // 🌟 關鍵：如果比賽結束，強制將該房間的電腦對手狀態設為 'finished' 
-                        // 這樣下一局的觸發條件就不會成立
-                        if (isMatchOver) {
-                            addLog(`BO3 結束，鎖定房間`);
-                            // 這裡可以選擇將房間狀態鎖定，避免再進行 rematch
-                        }
                     }
                 });
-            }
+            } // 這裡補上結束 currentTournamentId 的判斷括號
+        }
 
         function showResult(p1Move, p2Move, scores) {
             document.getElementById('result-area').classList.remove('hidden');
@@ -540,6 +534,14 @@
         }
 
         function requestRematch() {
+            if (currentTournamentId) {
+                const p1Score = parseInt(document.getElementById('p1-score').innerText);
+                const p2Score = parseInt(document.getElementById('p2-score').innerText);
+                if (p1Score >= 2 || p2Score >= 2) {
+                    addLog("比賽已結束，拒絕重賽請求");
+                    return; 
+                }
+            }
             addLog("我方按下下一局");
             db.ref(`rooms/${currentRoom}/${myRole}`).update({ status: 'rematch' });
             
