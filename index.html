@@ -61,7 +61,7 @@
 
                 <div class="flex justify-between items-center mb-4">
                     <span id="display-room-id" class="text-xs font-mono text-gray-400 bg-slate-100 px-2 py-1 rounded">房間：----</span>
-                    <button onclick="quitRoom()" class="text-xs text-red-400 hover:text-red-600 transition font-bold">退出房間</button>
+                    <button onclick="currentTournamentId ? backToTournamentLobby() : quitRoom()" class="text-xs text-red-400 hover:text-red-600 transition font-bold">退出房間</button>
                 </div>
 
                 <div class="flex justify-around items-center bg-slate-50 py-3 rounded-lg mb-6 border border-slate-100">
@@ -138,7 +138,6 @@
         let pendingInviteRoom = "";
         let pendingRequesterUid = ""; 
 
-        // 🏆 爭霸賽變數
         let currentTournamentId = null;
         let isTournamentHost = false;
 
@@ -174,20 +173,17 @@
                 let count = 0;
                 Object.keys(users).forEach(uid => {
                     if (uid === myUid) return; 
-                    
                     const user = users[uid];
                     if (!user || !user.name || user.name === "undefined") return;
 
                     count++;
-                    
                     let statusBadge = `<span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">閒置</span>`;
                     let inviteBtn = `<button onclick="sendInvite('${uid}')" class="text-xs bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1.5 rounded transition font-medium shadow-sm">邀請</button>`;
                     
                     if (user.status === "matching") {
                         statusBadge = `<span class="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded font-bold border border-amber-200">等待中</span>`;
                         inviteBtn = `<button onclick="clickMatchPlayer('${uid}', '${user.matchingRoomId}')" class="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded transition font-bold shadow-sm animate-pulse">加入匹配</button>`;
-                    }
-                    else if (user.status === "playing") {
+                    } else if (user.status === "playing") {
                         statusBadge = `<span class="text-[10px] bg-red-50 text-red-500 px-1.5 py-0.5 rounded font-bold">戰鬥中</span>`;
                         inviteBtn = `<button disabled class="text-xs bg-gray-100 text-gray-400 px-3 py-1.5 rounded cursor-not-allowed">忙碌</button>`;
                     }
@@ -205,25 +201,18 @@
                 });
 
                 document.getElementById('online-count').innerText = (count + 1) + " 人";
-                if(count === 0) {
-                    listContainer.innerHTML = `<p class="text-xs text-gray-400 italic text-center py-4">大廳目前空無一人，等待對手加入...</p>`;
-                }
+                if(count === 0) listContainer.innerHTML = `<p class="text-xs text-gray-400 italic text-center py-4">大廳目前空無一人，等待對手加入...</p>`;
             });
         }
 
         function clickMatchPlayer(hostUid, roomId) {
-            db.ref(`users/${hostUid}`).update({
-                inviteRoom: roomId,
-                inviteFromName: myCurrentName,
-                requesterUid: myUid 
-            });
+            db.ref(`users/${hostUid}`).update({ inviteRoom: roomId, inviteFromName: myCurrentName, requesterUid: myUid });
             alert("已發送對戰申請！請耐心等待房主核准...");
         }
 
         function sendInvite(targetUid) {
             const randomRoomId = Math.floor(1000 + Math.random() * 9000).toString();
             myRole = 'player1';
-            
             db.ref('rooms/' + randomRoomId).set({
                 player1: { name: myCurrentName, choice: "", status: "waiting" },
                 player2: { name: "等待中...", choice: "", status: "waiting" },
@@ -243,32 +232,23 @@
                     document.getElementById('invite-modal').classList.add('hidden');
                     return;
                 }
-
                 if (rid.startsWith("ACCEPTED_")) {
                     const actualRid = rid.split("_")[1];
                     myUserRef.update({ inviteRoom: "", status: "playing" });
                     myRole = 'player2'; 
-                    db.ref(`rooms/${actualRid}/player2`).update({
-                        name: myCurrentName, choice: "", status: "waiting"
-                    }).then(() => {
-                        enterRoom(actualRid);
-                    });
+                    db.ref(`rooms/${actualRid}/player2`).update({ name: myCurrentName, choice: "", status: "waiting" }).then(() => enterRoom(actualRid));
                     return; 
                 }
-
                 if (rid === "DECLINED") {
                     alert("❌ 申請失敗，房主婉拒了你的切磋請求。");
                     myUserRef.update({ inviteRoom: "" });
                     return; 
                 }
-
                 myUserRef.once('value', (userSnap) => {
                     const uData = userSnap.val();
-                    const hostName = uData.inviteFromName || "神祕玩家";
                     pendingInviteRoom = rid;
                     pendingRequesterUid = uData.requesterUid || "";
-                    
-                    document.getElementById('invite-host-name').innerText = hostName;
+                    document.getElementById('invite-host-name').innerText = uData.inviteFromName || "神祕玩家";
                     document.getElementById('invite-modal').classList.remove('hidden');
                 });
             });
@@ -279,16 +259,11 @@
             if (!pendingInviteRoom) return;
             const rid = pendingInviteRoom;
             
-            if (myRole === 'player1') {
-                db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "", status: "playing" });
-                if (pendingRequesterUid) {
-                    db.ref(`users/${pendingRequesterUid}`).update({ inviteRoom: "ACCEPTED_" + rid });
-                }
-            } else {
-                db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "", status: "playing" });
-                db.ref(`rooms/${rid}/player2`).update({
-                    name: myCurrentName, choice: "", status: "waiting"
-                }).then(() => {
+            db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "", status: "playing" });
+            if (myRole === 'player1' && pendingRequesterUid) {
+                db.ref(`users/${pendingRequesterUid}`).update({ inviteRoom: "ACCEPTED_" + rid });
+            } else if (myRole !== 'player1') {
+                db.ref(`rooms/${rid}/player2`).update({ name: myCurrentName, choice: "", status: "waiting" }).then(() => {
                     myRole = 'player2';
                     enterRoom(rid);
                 });
@@ -298,16 +273,11 @@
         function declineInvite() {
             document.getElementById('invite-modal').classList.add('hidden');
             if (!pendingInviteRoom) return;
-            const rid = pendingInviteRoom;
-
-            if (myRole === 'player1') {
-                db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "" });
-                if (pendingRequesterUid) {
-                    db.ref(`users/${pendingRequesterUid}`).update({ inviteRoom: "DECLINED" });
-                }
-            } else {
-                db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "" });
-                db.ref('rooms/' + rid).remove();
+            db.ref(`users/${myUid}`).update({ inviteRoom: "", inviteFromName: "", requesterUid: "" });
+            if (myRole === 'player1' && pendingRequesterUid) {
+                db.ref(`users/${pendingRequesterUid}`).update({ inviteRoom: "DECLINED" });
+            } else if (myRole !== 'player1') {
+                db.ref('rooms/' + pendingInviteRoom).remove();
             }
         }
 
@@ -315,45 +285,32 @@
             let rid = document.getElementById('room-input').value.trim();
             if (!rid) rid = Math.floor(1000 + Math.random() * 9000).toString();
             if (!/^\d{4}$/.test(rid)) return alert("請輸入 4 位數字房號");
-
             myRole = 'player1';
             if(myUid) db.ref(`users/${myUid}`).update({ status: "matching", matchingRoomId: rid });
-            
             db.ref('rooms/' + rid).set({
                 player1: { name: myCurrentName, choice: "", status: "waiting" },
                 player2: { name: "等待中...", choice: "", status: "waiting" },
-                scores: { player1: 0, player2: 0 },
-                history: []
-            }).then(() => {
-                enterRoom(rid);
-            });
+                scores: { player1: 0, player2: 0 }, history: []
+            }).then(() => enterRoom(rid));
         }
 
         function handleJoin() {
             const rid = document.getElementById('room-input').value.trim();
             if (!rid || !/^\d{4}$/.test(rid)) return alert("請輸入 4 位數房號");
-
             const roomRef = db.ref('rooms/' + rid);
             roomRef.once('value', (snap) => {
                 if (!snap.exists()) return alert("❌ 找不到該房間，請確認房號是否正確！");
-                
                 roomRef.transaction((currentData) => {
                     if (currentData === null) return currentData; 
                     if (currentData.player1.status === "waiting" && (currentData.player1.name === "玩家1" || currentData.player1.name === "" || currentData.player1.name === "等待中...")) {
-                        currentData.player1.name = myCurrentName;
-                        return currentData;
+                        currentData.player1.name = myCurrentName; return currentData;
                     } else if (currentData.player2.status === "waiting" && (currentData.player2.name === "等待中..." || currentData.player2.name === "")) {
-                        currentData.player2.name = myCurrentName;
-                        return currentData;
-                    } else {
-                        return; 
-                    }
+                        currentData.player2.name = myCurrentName; return currentData;
+                    } else return; 
                 }, (error, committed, snapshot) => {
-                    if (error || !committed) {
-                        alert("❌ 房間已滿或發生衝突！");
-                    } else {
-                        const data = snapshot.val();
-                        myRole = (data.player1.name === myCurrentName) ? 'player1' : 'player2';
+                    if (error || !committed) alert("❌ 房間已滿或發生衝突！");
+                    else {
+                        myRole = (snapshot.val().player1.name === myCurrentName) ? 'player1' : 'player2';
                         if(myUid) db.ref(`users/${myUid}`).update({ status: "playing" });
                         enterRoom(rid);
                     }
@@ -374,14 +331,20 @@
             location.reload();
         }
 
+        // 🌟 處理爭霸賽退回大廳的機制
+        function backToTournamentLobby() {
+            currentRoom = null;
+            myRole = null;
+            document.getElementById('game-screen').classList.add('hidden');
+            document.getElementById('setup-screen').classList.remove('hidden');
+            if(myUid) db.ref(`users/${myUid}`).update({ status: "idle" }); 
+            enterTournamentLobby(currentTournamentId); // 強制重新顯示賽事大廳
+        }
+
         function listenRoom(rid) {
             db.ref('rooms/' + rid).on('value', (snapshot) => {
                 const data = snapshot.val();
-                if(!data) {
-                    alert("⚠️ 房間已被關閉或對手已退出。");
-                    quitRoom();
-                    return;
-                }
+                if(!data) return;
 
                 localPlayerNames.player1 = data.player1.name;
                 localPlayerNames.player2 = data.player2.name;
@@ -406,7 +369,11 @@
                 const me = data[myRole];
 
                 if (p1.status === 'rematch' && p2.status === 'rematch') {
-                    if (myRole === 'player1') resetGameData();
+                    // 🌟 修正點：如果對手是電腦，強制由「人類玩家」來負責重置房間！
+                    const oppRole = myRole === 'player1' ? 'player2' : 'player1';
+                    if (myRole === 'player1' || localPlayerNames[oppRole] === "🤖 電腦AI") {
+                        resetGameData();
+                    }
                     return;
                 }
 
@@ -414,7 +381,8 @@
                     if (!hasJudged && myRole === 'player1') {
                         processRoundResult(p1.choice, p2.choice, data.scores, data.history || []);
                     }
-                    showResult(p1.choice, p2.choice);
+                    // 🌟 傳入最新分數給 showResult 以便判斷 BO3 結束
+                    showResult(p1.choice, p2.choice, data.scores);
                 } 
                 else if (p1.status === 'waiting' && p2.status === 'waiting') {
                     resetUI();
@@ -427,23 +395,18 @@
             });
         }
 
-        // 🌟 遊戲核心：新增電腦自動出拳機制
         function play(move) {
             if (navigator.vibrate) navigator.vibrate(50);
             hasJudged = false;
-            
             db.ref(`rooms/${currentRoom}/${myRole}`).update({ choice: move, status: 'ready' });
             
-            // 偵測對手是不是電腦，如果是，電腦在 0.8 秒後隨機出拳
             const oppRole = myRole === 'player1' ? 'player2' : 'player1';
             if (localPlayerNames[oppRole] === "🤖 電腦AI") {
                 const choices = ['石頭', '剪刀', '布'];
-                const botMove = choices[Math.floor(Math.random() * 3)];
                 setTimeout(() => {
-                    db.ref(`rooms/${currentRoom}/${oppRole}`).update({ choice: botMove, status: 'ready' });
+                    db.ref(`rooms/${currentRoom}/${oppRole}`).update({ choice: choices[Math.floor(Math.random() * 3)], status: 'ready' });
                 }, 800);
             }
-
             document.getElementById('controls').classList.add('pointer-events-none', 'opacity-50');
         }
 
@@ -458,12 +421,32 @@
             const record = `${moveEmoji(p1Move)} VS ${moveEmoji(p2Move)} - ${winName}勝`;
             
             db.ref(`rooms/${currentRoom}`).update({
-                scores: newScores,
-                history: [record, ...oldHistory].slice(0, 5)
+                scores: newScores, history: [record, ...oldHistory].slice(0, 5)
             });
+
+            // 🏆 BO3 賽事分數同步
+            if (currentTournamentId) {
+                db.ref(`rooms/${currentRoom}/matchKey`).once('value', s => {
+                    const matchKey = s.val();
+                    if (matchKey) {
+                        let matchStatus = "playing";
+                        let matchWinner = "";
+                        // 雙方任一人達到 2 勝，則狀態變為 finished
+                        if (newScores.player1 >= 2 || newScores.player2 >= 2) {
+                            matchStatus = "finished";
+                            matchWinner = newScores.player1 >= 2 ? localPlayerNames.player1 : localPlayerNames.player2;
+                        }
+                        db.ref(`tournaments/${currentTournamentId}/matches/${matchKey}`).update({
+                            bo3_score: `${newScores.player1} : ${newScores.player2}`,
+                            status: matchStatus,
+                            winner: matchWinner
+                        });
+                    }
+                });
+            }
         }
 
-        function showResult(p1Move, p2Move) {
+        function showResult(p1Move, p2Move, scores) {
             document.getElementById('result-area').classList.remove('hidden');
             const resLabel = document.getElementById('final-result');
             const winner = judgeWinner(p1Move, p2Move);
@@ -480,19 +463,28 @@
                 resLabel.innerText = iWon ? "你贏了！🔥" : "你輸了...💀";
                 resLabel.className = iWon ? "text-3xl font-black italic mb-6 text-red-500" : "text-3xl font-black italic mb-6 text-slate-500";
             }
+
+            // 🏆 BO3 結束判定：如果有人達到 2 勝，強制切換按鈕行為
+            const btn = document.getElementById('rematch-btn');
+            if (currentTournamentId && scores && (scores.player1 >= 2 || scores.player2 >= 2)) {
+                const iWonMatch = (scores.player1 >= 2 && isP1) || (scores.player2 >= 2 && !isP1);
+                resLabel.innerText = iWonMatch ? "🏆 晉級下一輪！" : "💀 你被淘汰了...";
+                resLabel.className = iWonMatch ? "text-3xl font-black italic mb-6 text-amber-500" : "text-3xl font-black italic mb-6 text-gray-500";
+                
+                btn.innerText = "返回爭霸賽大廳";
+                btn.onclick = backToTournamentLobby; // 返回大廳準備下一輪
+            } else {
+                btn.innerText = "下一局";
+                btn.onclick = requestRematch; // 正常重賽
+            }
         }
 
-        // 🌟 自動續戰：如果對手是電腦，電腦會自動幫按「下一局」
         function requestRematch() {
             db.ref(`rooms/${currentRoom}/${myRole}`).update({ status: 'rematch' });
-            
             const oppRole = myRole === 'player1' ? 'player2' : 'player1';
             if (localPlayerNames[oppRole] === "🤖 電腦AI") {
-                setTimeout(() => {
-                    db.ref(`rooms/${currentRoom}/${oppRole}`).update({ status: 'rematch' });
-                }, 600);
+                setTimeout(() => db.ref(`rooms/${currentRoom}/${oppRole}`).update({ status: 'rematch' }), 600);
             }
-
             document.getElementById('rematch-btn').innerText = "已就緒...";
             document.getElementById('rematch-btn').classList.add('opacity-50', 'pointer-events-none');
         }
@@ -505,8 +497,6 @@
         function resetUI() {
             document.getElementById('result-area').classList.add('hidden');
             document.getElementById('controls').classList.remove('pointer-events-none', 'opacity-50');
-            document.getElementById('rematch-btn').innerText = "下一局";
-            document.getElementById('rematch-btn').classList.remove('opacity-50', 'pointer-events-none');
         }
 
         function updateHistoryUI(history) {
@@ -521,70 +511,40 @@
 
         function moveEmoji(m) { return m === '石頭' ? '✊' : (m === '剪刀' ? '✌️' : '🖐️'); }
 
-
         // ==========================================
         // ☄️ 星街專輯爭霸賽 (Tournament) 核心模組 
         // ==========================================
 
         function createTournament() {
             let tid = document.getElementById('room-input').value.trim();
-            
-            if (tid && /^\d{4}$/.test(tid)) {
-                tid = "T" + tid;
-            } else if (!tid) {
-                tid = "T" + Math.floor(1000 + Math.random() * 9000).toString();
-            } else {
-                tid = tid.toUpperCase();
-            }
+            if (tid && /^\d{4}$/.test(tid)) tid = "T" + tid;
+            else if (!tid) tid = "T" + Math.floor(1000 + Math.random() * 9000).toString();
+            else tid = tid.toUpperCase();
 
             if (!myUid) return alert("請先輸入暱稱載入大廳！");
 
             isTournamentHost = true;
             db.ref('tournaments/' + tid).set({
-                hostUid: myUid,
-                status: "waiting", 
-                players: {
-                    [myUid]: { name: myCurrentName }
-                },
-                matches: {}
-            }).then(() => {
-                enterTournamentLobby(tid);
-            });
+                hostUid: myUid, status: "waiting", players: { [myUid]: { name: myCurrentName } }, matches: {}
+            }).then(() => enterTournamentLobby(tid));
         }
 
         function joinTournament() {
             let tid = document.getElementById('room-input').value.trim();
             if (!tid) return alert("請輸入爭霸賽房號！");
-
             tid = tid.toUpperCase();
-            if (/^\d{4}$/.test(tid)) {
-                tid = "T" + tid;
-            }
+            if (/^\d{4}$/.test(tid)) tid = "T" + tid;
 
             const tRef = db.ref('tournaments/' + tid);
-            
             tRef.once('value', (snap) => {
-                if (!snap.exists()) {
-                    return alert("❌ 找不到該爭霸賽！請確認房號是否為 " + tid);
-                }
-
+                if (!snap.exists()) return alert("❌ 找不到該爭霸賽！請確認房號是否為 " + tid);
                 const data = snap.val();
-                if (data.status !== "waiting") {
-                    return alert("❌ 該賽事已經開始或結束！");
-                }
+                if (data.status !== "waiting") return alert("❌ 該賽事已經開始或結束！");
+                if ((data.players ? Object.keys(data.players).length : 0) >= 10) return alert("❌ 爭霸賽已滿 10 人！");
 
-                const playerCount = data.players ? Object.keys(data.players).length : 0;
-                if (playerCount >= 10) {
-                    return alert("❌ 爭霸賽已滿 10 人！");
-                }
-
-                db.ref(`tournaments/${tid}/players/${myUid}`).set({
-                    name: myCurrentName
-                }).then(() => {
+                db.ref(`tournaments/${tid}/players/${myUid}`).set({ name: myCurrentName }).then(() => {
                     isTournamentHost = false;
                     enterTournamentLobby(tid);
-                }).catch(err => {
-                    alert("❌ 加入失敗：" + err.message);
                 });
             });
         }
@@ -598,7 +558,6 @@
                 <p class="text-sm text-gray-500 mb-4">等待玩家加入中... (最多 10 人)</p>
                 <div id="tourney-players" class="flex flex-wrap justify-center gap-2 mb-6"></div>
                 ${isTournamentHost ? `<button onclick="startTournamentMatchmaking()" class="w-full bg-amber-500 text-white py-3 rounded-lg font-bold shadow-md animate-pulse mb-3">馬上開始配對！</button>` : `<p class="text-amber-600 font-bold mb-4">等待房主開始配對...</p>`}
-                
                 <button onclick="leaveTournament()" class="text-xs text-red-400 hover:text-red-600 transition font-bold mt-2">退出爭霸賽大廳</button>
             `;
 
@@ -613,7 +572,6 @@
                     ).join('');
                 }
 
-                // 檢查是否已開始並切換房間
                 if (data.status === "playing" && data.matches) {
                     renderBrackets(data.matches);
                     checkAndJoinTournamentMatch(data.matches, tid);
@@ -623,15 +581,11 @@
 
         function leaveTournament() {
             if (!currentTournamentId || !myUid) return;
-            
             db.ref(`tournaments/${currentTournamentId}/players/${myUid}`).remove().then(() => {
-                currentTournamentId = null;
-                isTournamentHost = false;
-                location.reload(); 
+                currentTournamentId = null; isTournamentHost = false; location.reload(); 
             });
         }
 
-        // 🌟 核心轉移修復：房主一次性建好所有子房間
         function startTournamentMatchmaking() {
             db.ref('tournaments/' + currentTournamentId).once('value', (snapshot) => {
                 const data = snapshot.val();
@@ -641,11 +595,10 @@
                     const botUid = "BOT_" + Math.random().toString(36).substr(2, 9);
                     db.ref(`tournaments/${currentTournamentId}/players/${botUid}`).set({ name: "🤖 電腦AI" });
                     playerUids.push(botUid);
-                    data.players[botUid] = { name: "🤖 電腦AI" }; 
+                    data.players[botUid] = { name: "🤖 電腦AI" }; // 讓下方的陣列取得到名字
                 }
 
                 playerUids = playerUids.sort(() => Math.random() - 0.5);
-
                 let matches = {};
                 let roomUpdates = {}; 
 
@@ -657,50 +610,44 @@
                     const matchKey = `match_${i/2 + 1}`;
 
                     matches[matchKey] = {
-                        p1_uid: p1Uid,
-                        p2_uid: p2Uid,
-                        p1_name: p1Name,
-                        p2_name: p2Name,
-                        status: "pending", 
-                        bo3_score: "0 : 0",
-                        winner: ""
+                        p1_uid: p1Uid, p2_uid: p2Uid, p1_name: p1Name, p2_name: p2Name,
+                        status: "pending", bo3_score: "0 : 0", winner: ""
                     };
 
-                    // 🛠️ 房主負責把大家要打架的房間直接建好！
                     roomUpdates[`${currentTournamentId}_${matchKey}`] = {
                         player1: { name: p1Name, choice: "", status: "waiting" },
                         player2: { name: p2Name, choice: "", status: "waiting" },
                         scores: { player1: 0, player2: 0 },
-                        history: ["☄️ 星街專輯爭霸賽 - 準備開戰！"]
+                        history: ["☄️ 星街專輯爭霸賽 - 準備開戰！"],
+                        matchKey: matchKey
                     };
                 }
 
-                // 一次性寫入 Firebase
                 db.ref('rooms').update(roomUpdates).then(() => {
-                    db.ref('tournaments/' + currentTournamentId).update({
-                        status: "playing",
-                        matches: matches
-                    });
+                    db.ref('tournaments/' + currentTournamentId).update({ status: "playing", matches: matches });
                 });
             });
         }
 
-        // 🌟 極簡化跳轉邏輯：房間已經存在，讀了直接進去就好！
         function checkAndJoinTournamentMatch(matches, tid) {
             if (!matches) return;
-            
             Object.keys(matches).forEach(matchKey => {
                 const m = matches[matchKey];
-                
                 if (m.p1_uid === myUid || m.p2_uid === myUid) {
                     if (m.status === "pending" || m.status === "playing") {
                         const subRoomId = `${tid}_${matchKey}`; 
                         if (currentRoom === subRoomId) return;
 
-                        myRole = (m.p1_uid === myUid) ? 'player1' : 'player2';
-                        // 切換狀態為遊玩中，並直接飛入房間
-                        db.ref(`users/${myUid}`).update({ status: "playing", matchingRoomId: "" });
-                        setTimeout(() => enterRoom(subRoomId), 500);
+                        // 🌟 終極安全機制：等待房間確實建好後再進去
+                        const roomCheckRef = db.ref('rooms/' + subRoomId);
+                        roomCheckRef.on('value', function checkExist(snap) {
+                            if (snap.exists() && currentRoom !== subRoomId) {
+                                roomCheckRef.off('value', checkExist); // 確定存在就移除監聽
+                                myRole = (m.p1_uid === myUid) ? 'player1' : 'player2';
+                                db.ref(`users/${myUid}`).update({ status: "playing", matchingRoomId: "" });
+                                enterRoom(subRoomId);
+                            }
+                        });
                     }
                 }
             });
@@ -713,6 +660,9 @@
             
             listContainer.innerHTML = Object.keys(matches).map(matchKey => {
                 const m = matches[matchKey];
+                let statusText = m.status === 'pending' ? '準備開打' : '開戰中';
+                if (m.status === 'finished') statusText = `🎉 ${m.winner} 晉級！`;
+
                 return `
                     <div class="bg-amber-50 p-3 rounded-lg border border-amber-200 mb-2 animate-pop-in">
                         <div class="flex justify-between items-center font-bold text-sm">
@@ -720,7 +670,7 @@
                             <span class="text-xs text-amber-500 mx-2">VS</span>
                             <span class="${m.p2_name.includes('電腦') ? 'text-gray-400' : 'text-emerald-600'}">${m.p2_name}</span>
                         </div>
-                        <div class="text-center mt-2 text-[10px] text-gray-400">第一輪對戰：${m.status === 'pending' ? '準備開打' : '開戰中'}</div>
+                        <div class="text-center mt-2 text-[10px] text-gray-500 font-semibold">${statusText} ( 比分 ${m.bo3_score} )</div>
                     </div>
                 `;
             }).join('');
