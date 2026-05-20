@@ -185,7 +185,7 @@
 
         function listenLobbyUsers() {
             db.ref('users').on('value', (snapshot) => {
-                if (currentTournamentId) return; // 爭霸賽期間不渲染普通大廳
+                if (currentTournamentId) return; 
                 const users = snapshot.val() || {};
                 const listContainer = document.getElementById('lobby-user-list');
                 listContainer.innerHTML = "";
@@ -331,6 +331,7 @@
         function enterRoom(rid) {
             addLog(`進入對戰房間: ${rid}，我的身分: ${myRole}`);
             currentRoom = rid;
+            hasJudged = false; // 每次重進房間，重置裁判裁判鎖
             document.getElementById('setup-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.remove('hidden');
             document.getElementById('display-room-id').innerText = "房間：" + rid;
@@ -369,21 +370,38 @@
 
                 const p1 = data.player1, p2 = data.player2, me = data[myRole];
                 let isP1Bot = localPlayerNames.player1 && localPlayerNames.player1.includes("電腦");
+                let isP2Bot = localPlayerNames.player2 && localPlayerNames.player2.includes("電腦");
                 let amIJudge = (myRole === 'player1') || (myRole === 'player2' && isP1Bot);
 
-                // 補救機制：若對手是電腦 AI 卡在等待中，自動幫它按下 rematch
+                // 🔥 核心修復 1：安全自動化 AI 補拳機制（防止玩家出拳後 AI 不回應）
                 const oppRole = myRole === 'player1' ? 'player2' : 'player1';
-                if (me.status === 'rematch' && localPlayerNames[oppRole]?.includes("電腦") && data[oppRole].status === 'waiting') {
+                const isOppBot = localPlayerNames[oppRole] && localPlayerNames[oppRole].includes("電腦");
+                if (me.status === 'ready' && isOppBot && data[oppRole].status === 'waiting') {
+                    addLog("偵測到玩家已出拳，觸發電腦 AI 出拳機制...");
+                    const choices = ['石頭', '剪刀', '布'];
+                    db.ref(`rooms/${currentRoom}/${oppRole}`).update({ 
+                        choice: choices[Math.floor(Math.random() * 3)], 
+                        status: 'ready' 
+                    });
+                }
+
+                // 🔥 核心修復 2：安全自動化 AI 下一局機制（防止重現截圖中的卡死）
+                if (me.status === 'rematch' && isOppBot && data[oppRole].status === 'done') {
+                    addLog("我方請求下一局，自動帶動電腦 AI 就緒...");
                     db.ref(`rooms/${currentRoom}/${oppRole}`).update({ status: 'rematch' });
                 }
 
+                // 兩邊都要求下一局時，由裁判清空數據
                 if (p1.status === 'rematch' && p2.status === 'rematch') {
                     if (amIJudge) resetGameData();
                     return;
                 }
 
-                if (p1.status === 'ready' && p2.status === 'ready') {
-                    if (!hasJudged && amIJudge) processRoundResult(p1.choice, p2.choice, data.scores, data.history || []);
+                // 兩邊都準備好了，進行判定
+                if ((p1.status === 'ready' || p1.status === 'done') && (p2.status === 'ready' || p2.status === 'done')) {
+                    if (!hasJudged && amIJudge) {
+                        processRoundResult(p1.choice, p2.choice, data.scores, data.history || []);
+                    }
                     showResult(p1.choice, p2.choice, data.scores);
                     document.getElementById('status-msg').innerText = "回合結束！";
                 } else {
@@ -397,14 +415,6 @@
             addLog(`我出了：${move}`);
             hasJudged = false;
             db.ref(`rooms/${currentRoom}/${myRole}`).update({ choice: move, status: 'ready' });
-            
-            const oppRole = myRole === 'player1' ? 'player2' : 'player1';
-            if (localPlayerNames[oppRole] && localPlayerNames[oppRole].includes("電腦")) {
-                setTimeout(() => {
-                    const choices = ['石頭', '剪刀', '布'];
-                    db.ref(`rooms/${currentRoom}/${oppRole}`).update({ choice: choices[Math.floor(Math.random() * 3)], status: 'ready' });
-                }, 600);
-            }
             document.getElementById('controls').classList.add('pointer-events-none', 'opacity-50');
         }
 
@@ -418,7 +428,12 @@
             const winName = res === 'draw' ? '平手' : (res === 'p1' ? localPlayerNames.player1 : localPlayerNames.player2);
             const record = `${moveEmoji(p1Move)} VS ${moveEmoji(p2Move)} - ${winName}勝`;
             
-            db.ref(`rooms/${currentRoom}`).update({ scores: newScores, history: [record, ...oldHistory].slice(0, 5) });
+            db.ref(`rooms/${currentRoom}`).update({ 
+                scores: newScores, 
+                history: [record, ...oldHistory].slice(0, 5),
+                "player1/status": "done",
+                "player2/status": "done"
+            });
         
             if (currentTournamentId) {
                 db.ref(`rooms/${currentRoom}/matchKey`).once('value', s => {
@@ -452,8 +467,8 @@
             }
 
             const btn = document.getElementById('rematch-btn');
-            const p1Score = parseInt(document.getElementById('p1-score').innerText);
-            const p2Score = parseInt(document.getElementById('p2-score').innerText);
+            const p1Score = scores?.player1 || 0;
+            const p2Score = scores?.player2 || 0;
             const isMatchOver = (p1Score >= 2 || p2Score >= 2);
             
             if (currentTournamentId && isMatchOver) {
@@ -461,8 +476,18 @@
                 resLabel.innerText = iWonMatch ? "🏆 晉級下一輪！" : "💀 你被淘汰了...";
                 resLabel.className = iWonMatch ? "text-3xl font-black italic mb-6 text-amber-500" : "text-3xl font-black italic mb-6 text-gray-500";
                 btn.innerText = "返回爭霸賽大廳"; btn.onclick = backToTournamentLobby; 
+                btn.classList.remove('opacity-50', 'pointer-events-none');
             } else {
-                btn.innerText = "下一局"; btn.onclick = requestRematch; 
+                // 如果我已經點了下一局，鎖定按鈕
+                db.ref(`rooms/${currentRoom}/${myRole}/status`).once('value', snap => {
+                    if (snap.val() === 'rematch') {
+                        btn.innerText = "已就緒...";
+                        btn.classList.add('opacity-50', 'pointer-events-none');
+                    } else {
+                        btn.innerText = "下一局"; btn.onclick = requestRematch; 
+                        btn.classList.remove('opacity-50', 'pointer-events-none');
+                    }
+                });
             }
         }
 
@@ -474,10 +499,11 @@
         }
 
         function resetGameData() {
+            addLog("執行房間欄位原子化清空 (waiting)...");
             db.ref(`rooms/${currentRoom}`).update({
                 "player1/choice": "", "player1/status": "waiting",
                 "player2/choice": "", "player2/status": "waiting"
-            });
+            }).then(() => { hasJudged = false; });
         }
 
         function resetUI() {
@@ -492,8 +518,9 @@
             document.getElementById('history-list').innerHTML = history.map(item => `<div class="py-1 border-b border-slate-50 text-gray-400">${item}</div>`).join('');
         }
 
+        // 判定核心
         function judgeWinner(p1, p2) {
-            if(p1 === p2) return 'draw';
+            if(!p1 || !p2 || p1 === p2) return 'draw';
             if((p1 === '石頭' && p2 === '剪刀') || (p1 === '剪刀' && p2 === '布') || (p1 === '布' && p2 === '石頭')) return 'p1';
             return 'p2';
         }
@@ -530,15 +557,12 @@
 
         function enterTournamentLobby(tid) {
             currentTournamentId = tid;
-            
-            // 修正：進入大廳時，主動隱藏一般玩家大廳以防止渲染重疊
             document.getElementById('lobby-user-list').innerHTML = `<p class="text-xs text-gray-400 italic text-center py-4">已加入爭霸賽，目前切換至配對面板...</p>`;
             
             db.ref('tournaments/' + tid).on('value', (snapshot) => {
                 const data = snapshot.val();
                 if (!data) return;
 
-                // 核心修復：檢查是否所有配對狀態都已經是 finished
                 let allFinished = true;
                 let hasMatches = false;
                 if (data.matches && Object.keys(data.matches).length > 0) {
@@ -548,19 +572,18 @@
                     });
                 }
 
-                // 根據對局狀態動態決定按鈕可用性
                 const canMatch = !hasMatches || allFinished;
                 
                 const hostBtnHTML = isTournamentHost ? `
                     <button onclick="${canMatch ? 'startTournamentMatchmaking()' : 'alert(\'還有對局正在激戰中！請等待所有人結束。\')'}" 
-                        class="w-full ${canMatch ? 'bg-amber-500 hover:bg-amber-600' : 'bg-gray-400 cursor-not-allowed'} text-white py-3 rounded-lg font-bold shadow-md animate-pulse mb-3 transition">
+                        class="w-full ${canMatch ? 'bg-amber-500 hover:bg-amber-600' : 'bg-gray-400 cursor-not-allowed'} text-white py-3 rounded-lg font-bold shadow-md mb-3 transition">
                         ${hasMatches ? (allFinished ? '☄️ 開始下一輪配對！' : '⚔️ 比賽激戰中...') : '馬上開始配對！'}
                     </button>
                 ` : `<p class="text-amber-600 font-bold mb-4">${hasMatches && !allFinished ? '⚔️ 賽事火熱進行中，請完成你的對局...' : '等待房主開始配對...'}</p>`;
 
                 document.getElementById('setup-screen').innerHTML = `
                     <div class="flex justify-between items-start mb-4"><h1 class="text-2xl font-bold text-amber-500">☄️ 爭霸賽大廳：${tid}</h1></div>
-                    <p class="text-sm text-gray-500 mb-4">目前參賽選手名單 (最多 10 人)：</p>
+                    <p class="text-sm text-gray-500 mb-4">目前參賽選手名單：</p>
                     <div id="tourney-players" class="flex flex-wrap justify-center gap-2 mb-6"></div>
                     ${hostBtnHTML}
                     <button onclick="location.reload()" class="text-xs text-red-400 hover:text-red-600 transition font-bold mt-2">完全退出賽事</button>
@@ -580,12 +603,11 @@
         }
 
         function startTournamentMatchmaking() {
-            addLog("房主開啟新一輪配對，徹底清理舊戰局...");
+            addLog("房主分配全新配對賽局...");
             db.ref('tournaments/' + currentTournamentId).once('value', (snapshot) => {
                 const data = snapshot.val();
-                let playerUids = Object.keys(data.players);
+                let playerUids = Object.keys(data.players).filter(id => !id.startsWith("BOT_")); // 移除上一輪的舊機器人
                 
-                // 人數為單數時，自動補入一個 AI
                 if (playerUids.length % 2 !== 0) {
                     const botUid = "BOT_" + Math.random().toString(36).substr(2, 9);
                     db.ref(`tournaments/${currentTournamentId}/players/${botUid}`).set({ name: "🤖 電腦AI" });
@@ -599,7 +621,7 @@
                 for (let i = 0; i < playerUids.length; i += 2) {
                     const p1Uid = playerUids[i], p2Uid = playerUids[i+1];
                     const p1Name = data.players[p1Uid].name, p2Name = data.players[p2Uid].name;
-                    const matchKey = `match_${i/2 + 1}_${Date.now().toString().slice(-4)}`; // 使用時間戳避免與舊房間衝突
+                    const matchKey = `match_${(i/2)+1}_${Math.floor(100+Math.random()*900)}`;
 
                     matches[matchKey] = {
                         p1_uid: p1Uid, p2_uid: p2Uid, p1_name: p1Name, p2_name: p2Name,
@@ -615,7 +637,6 @@
                     };
                 }
 
-                // 批量清除舊對戰路徑並原子化寫入新局
                 db.ref(`rooms`).update(roomUpdates).then(() => {
                     db.ref('tournaments/' + currentTournamentId).update({ status: "playing", matches: matches });
                 });
@@ -643,7 +664,7 @@
                 const m = matches[matchKey];
                 let statusText = m.status === 'pending' ? '⏳ 準備開打' : m.status === 'playing' ? '⚔️ 激戰中' : `🎉 ${m.winner} 獲勝`;
                 return `
-                    <div class="bg-amber-50 p-3 rounded-lg border border-amber-200 mb-2 animate-pop-in">
+                    <div class="bg-amber-50 p-3 rounded-lg border border-amber-200 mb-2">
                         <div class="flex justify-between items-center font-bold text-sm">
                             <span class="${m.p1_name.includes('電腦') ? 'text-gray-400' : 'text-indigo-600'}">${m.p1_name}</span>
                             <span class="text-xs text-amber-500 mx-2">VS</span>
