@@ -2,125 +2,24 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>猜猜猜拳 - 星街專輯爭霸賽</title>
+    <title>猜猜猜拳 - 爭霸賽修復版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 </head>
-<body class="bg-slate-100 flex flex-col md:flex-row items-center md:items-start justify-center min-h-screen p-4 gap-4 font-sans text-slate-800">
-
-    <button onclick="toggleLogPanel()" class="fixed bottom-4 left-4 bg-slate-800 text-white text-xs px-3 py-2 rounded-lg shadow-lg z-50 opacity-50 hover:opacity-100 transition flex items-center gap-1">
-        <span>🐛</span><span>系統日誌</span>
-    </button>
-    <div id="log-panel" class="hidden fixed bottom-14 left-4 w-80 bg-slate-900/95 backdrop-blur-sm text-green-400 text-[10px] font-mono p-4 rounded-xl shadow-2xl z-50 h-72 flex flex-col border border-slate-700">
-        <div class="flex justify-between items-center mb-2 border-b border-slate-700 pb-2">
-            <span class="font-bold text-white">系統偵錯日誌</span>
-            <button onclick="toggleLogPanel()" class="text-red-400 hover:text-red-300 px-2 py-1 bg-red-900/30 rounded">關閉</button>
+<body class="bg-slate-100 p-4">
+    <div class="max-w-2xl mx-auto grid grid-cols-2 gap-4">
+        <div id="setup-screen" class="bg-white p-6 rounded-xl shadow-lg border-t-4 border-amber-500">
+            <h1 id="tourney-title" class="text-xl font-bold text-amber-600 mb-4">爭霸賽大廳</h1>
+            <div id="lobby-content"></div>
         </div>
-        <div id="log-content" class="overflow-y-auto flex-1 space-y-1 break-words"></div>
-    </div>
-
-    <div id="invite-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 animate-pop-in">
-        <div class="bg-white p-8 rounded-2xl shadow-2xl w-11/12 max-w-sm text-center border-t-4 border-indigo-500">
-            <div class="text-5xl mb-4 animate-bounce">⚔️</div>
-            <h3 class="text-xl font-black text-gray-800 mb-2">收到對戰請求！</h3>
-            <p class="text-gray-600 mb-8 text-sm">玩家 <span id="invite-host-name" class="font-bold text-indigo-600 text-base"></span> 想要與你對戰，是否接受？</p>
-            <div class="grid grid-cols-2 gap-3">
-                <button onclick="acceptInvite()" class="bg-indigo-500 text-white py-3 rounded-xl font-bold hover:bg-indigo-600 transition shadow-md">🔥 接受</button>
-                <button onclick="declineInvite()" class="bg-gray-100 text-gray-500 py-3 rounded-xl font-bold hover:bg-gray-200 transition">婉拒</button>
-            </div>
+        <div class="bg-white p-6 rounded-xl shadow-lg border-t-4 border-emerald-500">
+            <h2 class="font-bold text-emerald-600 mb-4">線上玩家大廳</h2>
+            <div id="lobby-user-list"></div>
         </div>
-    </div>
-
-    <div class="w-full max-w-sm flex flex-col justify-center min-h-[500px]">
-        <div id="setup-screen" class="bg-white p-8 rounded-xl shadow-lg w-full text-center border-t-4 border-indigo-500 relative">
-            <h1 class="text-2xl font-bold mb-6 text-indigo-600">✌️ 重拳出擊</h1>
-            
-            <div class="space-y-4 mb-6 text-left">
-                <div>
-                    <label class="block text-gray-500 text-xs mb-1 ml-1">你的暱稱</label>
-                    <input id="name-input" type="text" maxlength="10" placeholder="輸入大名" oninput="updateLobbyName()"
-                        class="w-full border-2 border-gray-100 p-3 rounded-lg focus:border-indigo-500 outline-none transition">
-                </div>
-                <div>
-                    <label class="block text-gray-500 text-xs mb-1 ml-1">房號 (普通4碼 / 爭霸賽 T+4碼)</label>
-                    <input id="room-input" type="text" maxlength="6" placeholder="例如：8888 或 T8888" 
-                        class="w-full border-2 border-gray-100 p-3 rounded-lg text-center text-xl font-mono tracking-widest focus:border-indigo-500 outline-none transition uppercase">
-                </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-                <button onclick="handleCreate()" class="bg-indigo-500 text-white py-3 rounded-lg hover:bg-indigo-600 transition font-bold shadow-md">建立房間</button>
-                <button onclick="handleJoin()" class="bg-emerald-500 text-white py-3 rounded-lg hover:bg-emerald-600 font-bold shadow-md">加入房間</button>
-            </div>
-
-            <div class="mt-8 pt-6 border-t border-gray-100">
-                <h3 class="text-sm font-bold text-amber-500 mb-3 text-left ml-1">☄️ 星街專輯爭霸賽</h3>
-                <div class="grid grid-cols-2 gap-4">
-                    <button onclick="createTournament()" class="bg-amber-500 text-white py-3 rounded-lg hover:bg-amber-600 transition font-bold shadow-md">開辦爭霸賽</button>
-                    <button onclick="joinTournament()" class="bg-orange-400 text-white py-3 rounded-lg hover:bg-orange-500 transition font-bold shadow-md">加入爭霸賽</button>
-                </div>
-            </div>
-        </div>
-
-        <div id="game-screen" class="hidden w-full animate-pop-in">
-            <div class="bg-white p-6 rounded-xl shadow-lg text-center border-t-4 border-indigo-500 mb-4">
-                <h2 id="battle-title" class="text-xl font-black text-gray-800 mb-4 tracking-wide">等待對手中...</h2>
-                <div class="flex justify-between items-center mb-4">
-                    <span id="display-room-id" class="text-xs font-mono text-gray-400 bg-slate-100 px-2 py-1 rounded">房間：----</span>
-                    <button onclick="quitRoom()" class="text-xs text-red-400 hover:text-red-600 transition font-bold">退出房間</button>
-                </div>
-                <div class="flex justify-around items-center bg-slate-50 py-3 rounded-lg mb-6 border border-slate-100">
-                    <div class="text-center w-5/12">
-                        <p id="p1-name" class="text-[10px] text-gray-400 uppercase truncate font-bold">Player 1</p>
-                        <p id="p1-score" class="text-3xl font-black text-indigo-600">0</p>
-                    </div>
-                    <div class="text-gray-300 font-light text-xl">VS</div>
-                    <div class="text-center w-5/12">
-                        <p id="p2-name" class="text-[10px] text-gray-400 uppercase truncate font-bold">Player 2</p>
-                        <p id="p2-score" class="text-3xl font-black text-emerald-600">0</p>
-                    </div>
-                </div>
-                <div id="status-msg" class="text-lg font-semibold mb-6 text-indigo-900 h-8 flex items-center justify-center">等待對手...</div>
-                <div id="controls" class="grid grid-cols-3 gap-4 mb-8">
-                    <button onclick="play('石頭')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-50 transition active:scale-95 border border-slate-100 shadow-sm">✊</button>
-                    <button onclick="play('剪刀')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-50 transition active:scale-95 border border-slate-100 shadow-sm">✌️</button>
-                    <button onclick="play('布')" class="text-4xl p-4 bg-gray-50 rounded-xl hover:bg-indigo-50 transition active:scale-95 border border-slate-100 shadow-sm">🖐️</button>
-                </div>
-                <div id="result-area" class="hidden border-t pt-6">
-                    <div class="flex justify-around mb-6">
-                        <div class="text-center">
-                            <p class="text-[10px] text-gray-400 mb-1 uppercase">你出了</p>
-                            <p id="my-move" class="text-5xl">?</p>
-                        </div>
-                        <div class="text-center">
-                            <p class="text-[10px] text-gray-400 mb-1 uppercase">對方出</p>
-                            <p id="opp-move" class="text-5xl">?</p>
-                        </div>
-                    </div>
-                    <div id="final-result" class="text-3xl font-black italic mb-6"></div>
-                    <button id="rematch-btn" onclick="requestRematch()" class="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 shadow-lg transition">下一局</button>
-                </div>
-            </div>
-            <div class="bg-white/70 backdrop-blur-sm p-4 rounded-xl shadow-inner border border-white max-h-40 overflow-y-auto">
-                <h3 class="text-[10px] font-bold text-gray-400 uppercase mb-2">對戰紀錄</h3>
-                <div id="history-list" class="space-y-1 text-xs font-mono"></div>
-            </div>
-        </div>
-    </div>
-
-    <div class="w-full max-w-sm bg-white p-6 rounded-xl shadow-lg border-t-4 border-emerald-500 self-stretch flex flex-col">
-        <h2 class="text-sm font-bold text-emerald-600 mb-4 flex items-center justify-between">
-            <span id="lobby-title">🟢 線上玩家大廳</span>
-            <span id="online-count" class="text-xs bg-emerald-50 px-2 py-0.5 rounded text-emerald-700">0 人</span>
-        </h2>
-        <div id="lobby-user-list" class="space-y-2 flex-1 overflow-y-auto max-h-60 md:max-h-none"></div>
     </div>
 
     <script>
-        let sysLogs = [], currentRoom = null, myRole = null, hasJudged = false, myUid = null, myCurrentName = "", currentTournamentId = null, isTournamentHost = false;
-        
         const firebaseConfig = {
             apiKey: "AIzaSyCkqnrJZWo66jXTUmLzs4iA-9HHhAJQ06A",
             authDomain: "junkanbon.firebaseapp.com",
@@ -130,187 +29,81 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
-        function addLog(msg) {
-            const time = new Date().toLocaleTimeString();
-            const logStr = `[${time}] ${msg}`;
-            sysLogs.push(logStr);
-            if (sysLogs.length > 50) sysLogs.shift();
-            const panel = document.getElementById('log-content');
-            if (panel) { panel.innerHTML = sysLogs.map(l => `<div>${l}</div>`).join(''); panel.scrollTop = panel.scrollHeight; }
-        }
+        let myUid = null, myCurrentName = "玩家_" + Math.floor(Math.random()*1000);
+        let currentTid = null;
 
-        function initLobby() {
-            myCurrentName = localStorage.getItem('rps_nickname') || "星詠者_" + Math.floor(1000 + Math.random() * 9000);
-            document.getElementById('name-input').value = myCurrentName;
-            const userRef = db.ref('users').push();
-            myUid = userRef.key;
-            userRef.set({ name: myCurrentName, status: "idle" });
-            userRef.onDisconnect().remove();
-            db.ref('users').on('value', (s) => {
-                const users = s.val() || {};
-                if (!currentTournamentId) {
-                    const list = document.getElementById('lobby-user-list');
-                    list.innerHTML = Object.keys(users).filter(u => u !== myUid).map(uid => `
-                        <div class="flex justify-between items-center bg-slate-50 p-2 rounded">${users[uid].name} 
-                        <button onclick="sendInvite('${uid}')" class="text-xs bg-indigo-500 text-white px-2 py-1 rounded">邀請</button></div>
-                    `).join('');
-                }
-            });
-        }
+        // 初始化：確保每個使用者 UID 唯一
+        const userRef = db.ref('users').push();
+        myUid = userRef.key;
+        userRef.set({ name: myCurrentName });
+        userRef.onDisconnect().remove();
 
-        function play(move) {
-            db.ref(`rooms/${currentRoom}/${myRole}`).update({ choice: move, status: 'ready' });
-            if (currentRoom.includes("_")) { // 若為爭霸賽房間，由裁判自動處理 AI
-                 const oppRole = myRole === 'player1' ? 'player2' : 'player1';
-                 db.ref(`rooms/${currentRoom}/${oppRole}`).once('value', s => {
-                    if (s.val().name.includes("電腦")) setTimeout(() => db.ref(`rooms/${currentRoom}/${oppRole}`).update({ choice: ['石頭','剪刀','布'][Math.floor(Math.random()*3)], status: 'ready' }), 800);
-                 });
-            }
-        }
-
-        function requestRematch() {
-            db.ref(`rooms/${currentRoom}/${myRole}`).update({ status: 'rematch' });
-            document.getElementById('rematch-btn').classList.add('opacity-50');
-        }
-
-        function enterRoom(rid) {
-            currentRoom = rid;
-            document.getElementById('setup-screen').classList.add('hidden');
-            document.getElementById('game-screen').classList.remove('hidden');
-            document.getElementById('display-room-id').innerText = "房間：" + rid;
-            
-            db.ref('rooms/' + rid).on('value', (s) => {
-                const data = s.val();
-                if (!data) return quitRoom();
-                
-                document.getElementById('p1-score').innerText = data.scores.player1;
-                document.getElementById('p2-score').innerText = data.scores.player2;
-                
-                if (data.player1.status === 'ready' && data.player2.status === 'ready' && myRole === 'player1') {
-                    // 裁判邏輯
-                    const res = (data.player1.choice === data.player2.choice) ? 'draw' : 
-                                ((data.player1.choice === '石頭' && data.player2.choice === '剪刀') || (data.player1.choice === '剪刀' && data.player2.choice === '布') || (data.player1.choice === '布' && data.player2.choice === '石頭')) ? 'p1' : 'p2';
-                    
-                    let newScores = data.scores;
-                    if(res === 'p1') newScores.player1++; else if(res === 'p2') newScores.player2++;
-                    
-                    db.ref(`rooms/${rid}`).update({ scores: newScores, "player1/status": "done", "player2/status": "done" });
-                    
-                    if (currentTournamentId) {
-                        const isOver = (newScores.player1 >= 2 || newScores.player2 >= 2);
-                        db.ref(`tournaments/${currentTournamentId}/matches/${data.matchKey}`).update({
-                            bo3_score: `${newScores.player1} : ${newScores.player2}`,
-                            status: isOver ? "finished" : "playing",
-                            winner: isOver ? (newScores.player1 >= 2 ? data.player1.name : data.player2.name) : ""
-                        });
-                    }
-                }
-                
-                if (data.player1.status === 'rematch' && data.player2.status === 'rematch' && myRole === 'player1') {
-                     db.ref(`rooms/${rid}`).update({ "player1/status": "waiting", "player2/status": "waiting", "player1/choice": "", "player2/choice": "" });
-                }
-                
-                if (data.player1.status === 'done') {
-                    document.getElementById('result-area').classList.remove('hidden');
-                    document.getElementById('my-move').innerText = (myRole === 'player1' ? data.player1.choice : data.player2.choice);
-                    document.getElementById('opp-move').innerText = (myRole === 'player1' ? data.player2.choice : data.player1.choice);
-                } else {
-                    document.getElementById('result-area').classList.add('hidden');
-                }
-            });
-        }
-
-        function quitRoom() { location.reload(); }
-        function toggleLogPanel() { document.getElementById('log-panel').classList.toggle('hidden'); }
-        function updateLobbyName() { myCurrentName = document.getElementById('name-input').value; localStorage.setItem('rps_nickname', myCurrentName); }
-
-        // --- 爭霸賽邏輯 ---
+        // 核心：進入爭霸賽大廳
         function enterTournamentLobby(tid) {
-            currentTournamentId = tid;
+            if (currentTid) db.ref('tournaments/' + currentTid).off(); // 關閉舊監聽
+            currentTid = tid;
+            
             db.ref('tournaments/' + tid).on('value', (s) => {
                 const data = s.val();
-                let allFinished = true;
-                if(data.matches) Object.values(data.matches).forEach(m => { if(m.status !== 'finished') allFinished = false; });
+                if (!data) return;
                 
-                document.getElementById('setup-screen').innerHTML = `
-                    <h2 class="text-xl font-bold text-amber-600">爭霸賽: ${tid}</h2>
-                    <div id="match-list" class="my-4 text-xs space-y-2"></div>
-                    ${isTournamentHost ? `<button onclick="${allFinished ? 'startTournamentMatchmaking()' : 'alert(\'尚有比賽進行中\')'}" class="w-full ${allFinished ? 'bg-amber-500' : 'bg-gray-400'} text-white py-2 rounded">開始/重啟配對</button>` : ''}
+                const isHost = (data.hostUid === myUid);
+                const players = Object.values(data.players || {});
+                
+                document.getElementById('lobby-content').innerHTML = `
+                    <div class="mb-4 text-sm">房號: ${tid} | 人數: ${players.length}</div>
+                    <div class="mb-4">${players.map(p => `<span class="bg-gray-100 px-2 py-1 rounded text-xs mr-1">${p.name}</span>`).join('')}</div>
+                    ${isHost ? `<button onclick="startMatch('${tid}')" class="w-full bg-amber-500 text-white py-2 rounded font-bold">開始/重啟配對</button>` : '<p class="text-xs text-gray-400">等待房主開始...</p>'}
                 `;
-                
-                if(data.matches) document.getElementById('match-list').innerHTML = Object.values(data.matches).map(m => `<div>${m.p1_name} vs ${m.p2_name} : ${m.bo3_score} (${m.status})</div>`).join('');
-                
-                // 自動加入自己的對局
-                if (data.status === 'playing') {
-                    Object.keys(data.matches).forEach(key => {
-                        const m = data.matches[key];
-                        if (m.p1_uid === myUid || m.p2_uid === myUid) {
-                            myRole = (m.p1_uid === myUid ? 'player1' : 'player2');
-                            enterRoom(`${tid}_${key}`);
-                        }
-                    });
-                }
-            });
-        }
-        
-        function startTournamentMatchmaking() {
-            db.ref('tournaments/' + currentTournamentId).once('value', s => {
-                const data = s.val();
-                const playerUids = Object.keys(data.players);
-                
-                // 檢查人數是否足夠
-                if (playerUids.length < 2) return alert("人數不足，無法配對！");
-        
-                // 如果已經有比賽紀錄，先清理（防止舊數據殘留）
-                db.ref(`tournaments/${currentTournamentId}/matches`).remove();
-        
-                let matches = {};
-                for(let i = 0; i < playerUids.length; i += 2) {
-                    // 如果最後剩一個，補一個電腦
-                    let p1 = playerUids[i];
-                    let p2 = playerUids[i+1] || "BOT_" + Date.now();
-                    
-                    // ... (後續配對邏輯維持不變)
-                }
             });
         }
 
-        function createTournament() {
-            // 強制離開目前的爭霸賽（如果有的話）
-            if (currentTournamentId) {
-                db.ref(`tournaments/${currentTournamentId}/players/${myUid}`).remove();
-            }
-        
-            const tid = "T" + Math.floor(1000 + Math.random() * 9000);
-            isTournamentHost = true;
-            
-            // 初始化賽事時，確保 players 物件是乾淨的
-            db.ref('tournaments/' + tid).set({
-                hostUid: myUid,
-                status: 'waiting',
-                players: { [myUid]: { name: myCurrentName } },
-                matches: {}
-            }).then(() => enterTournamentLobby(tid));
-        }
-        function joinTournament() {
-            const tid = document.getElementById('room-input').value.toUpperCase();
-            if (!tid) return alert("請輸入爭霸賽房號！");
-            
-            db.ref(`tournaments/${tid}`).once('value', (snap) => {
-                if (!snap.exists()) return alert("找不到賽事");
-                const data = snap.val();
+        // 核心：開始配對（嚴格清理舊資料）
+        function startMatch(tid) {
+            db.ref('tournaments/' + tid).once('value', s => {
+                const players = Object.keys(s.val().players);
+                const updates = {};
+                // 清理舊的 matches 路徑
+                updates[`tournaments/${tid}/matches`] = null; 
                 
-                // 檢查是否已在名單中
-                if (data.players && data.players[myUid]) {
-                    return enterTournamentLobby(tid); // 已經在裡面了，直接進入大廳
+                for(let i=0; i<players.length; i+=2) {
+                    const matchId = `m${i}`;
+                    const p1 = players[i];
+                    const p2 = players[i+1] || "BOT_ID";
+                    updates[`tournaments/${tid}/matches/${matchId}`] = { 
+                        p1_uid: p1, p2_uid: p2, 
+                        p1_name: s.val().players[p1].name, 
+                        p2_name: p2 === "BOT_ID" ? "電腦AI" : s.val().players[p2].name,
+                        status: 'playing', bo3: '0:0' 
+                    };
                 }
-                
-                // 加入名單
-                db.ref(`tournaments/${tid}/players/${myUid}`).set({ name: myCurrentName })
-                    .then(() => enterTournamentLobby(tid));
+                updates[`tournaments/${tid}/status`] = 'playing';
+                db.ref().update(updates);
             });
         }
-        window.addEventListener('DOMContentLoaded', initLobby);
+
+        // 建立賽事
+        function createTournament() {
+            const tid = "T" + Math.floor(1000 + Math.random() * 9000);
+            db.ref('tournaments/' + tid).set({
+                hostUid: myUid,
+                players: { [myUid]: { name: myCurrentName } },
+                status: 'waiting'
+            }).then(() => enterTournamentLobby(tid));
+        }
+
+        // 加入賽事 (加入前檢查並移除重複資料)
+        function joinTournament(tid) {
+            db.ref(`tournaments/${tid}/players/${myUid}`).set({ name: myCurrentName })
+            .then(() => enterTournamentLobby(tid));
+        }
+
+        // 初始化顯示按鈕
+        document.getElementById('lobby-content').innerHTML = `
+            <button onclick="createTournament()" class="bg-blue-500 text-white w-full py-2 mb-2 rounded">建立爭霸賽</button>
+            <input id="join-tid" placeholder="輸入T房號" class="border p-2 w-full mb-2">
+            <button onclick="joinTournament(document.getElementById('join-tid').value)" class="bg-green-500 text-white w-full py-2 rounded">加入</button>
+        `;
     </script>
 </body>
 </html>
