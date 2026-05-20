@@ -170,7 +170,16 @@
             addLog("生成本機 UID: " + myUid);
 
             userRef.set({ name: myCurrentName, status: "idle", inviteRoom: "", inviteFromName: "", matchingRoomId: "" });
+            
+            // 當玩家關閉網頁或中斷連線時：
             userRef.onDisconnect().remove();
+            
+            // 🔥 新增：如果玩家在爭霸賽中斷線，Firebase 後台自動幫他退出賽事
+            db.ref().on('value', () => {
+                if (currentTournamentId && myUid) {
+                    db.ref(`tournaments/${currentTournamentId}/players/${myUid}`).onDisconnect().remove();
+                }
+            });
 
             listenLobbyUsers();
             listenMyInvites(userRef);
@@ -607,42 +616,63 @@
         }
 
         function startTournamentMatchmaking() {
-            addLog("房主分配全新配對賽局...");
-            db.ref('tournaments/' + currentTournamentId).once('value', (snapshot) => {
-                const data = snapshot.val();
-                let playerUids = Object.keys(data.players).filter(id => !id.startsWith("BOT_")); // 移除上一輪的舊機器人
+            addLog("房主開啟新一輪配對，正在進行線上人口普查...");
+            
+            // 1. 先抓取目前真正維持連線的 users 列表
+            db.ref('users').once('value', (userSnap) => {
+                const onlineUsers = userSnap.val() || {};
                 
-                if (playerUids.length % 2 !== 0) {
-                    const botUid = "BOT_" + Math.random().toString(36).substr(2, 9);
-                    db.ref(`tournaments/${currentTournamentId}/players/${botUid}`).set({ name: "🤖 電腦AI" });
-                    playerUids.push(botUid);
-                    data.players[botUid] = { name: "🤖 電腦AI" };
-                }
+                // 2. 再讀取爭霸賽大廳登記的名單
+                db.ref('tournaments/' + currentTournamentId).once('value', (snapshot) => {
+                    const data = snapshot.val();
+                    let playerUids = Object.keys(data.players).filter(id => !id.startsWith("BOT_"));
+                    
+                    // 🔥 核心修正：如果登記的人根本不在目前的線上大廳(onlineUsers)裡，直接過濾掉(剔除幽靈玩家)
+                    playerUids = playerUids.filter(uid => {
+                        if (uid === data.hostUid) return true; // 房主保留
+                        const isOnline = onlineUsers[uid] !== undefined;
+                        if (!isOnline) {
+                            addLog(`發現幽靈玩家，已將其從賽事中移除: ${data.players[uid].name}`);
+                            db.ref(`tournaments/${currentTournamentId}/players/${uid}`).remove(); // 順手清理資料庫
+                        }
+                        return isOnline;
+                    });
 
-                playerUids = playerUids.sort(() => Math.random() - 0.5);
-                let matches = {}, roomUpdates = {};
+                    if (playerUids.length < 1) { alert("大廳已無足夠的線上玩家！"); return; }
 
-                for (let i = 0; i < playerUids.length; i += 2) {
-                    const p1Uid = playerUids[i], p2Uid = playerUids[i+1];
-                    const p1Name = data.players[p1Uid].name, p2Name = data.players[p2Uid].name;
-                    const matchKey = `match_${(i/2)+1}_${Math.floor(100+Math.random()*900)}`;
+                    // 3. 補滿單數（AI 機器人機制）
+                    if (playerUids.length % 2 !== 0) {
+                        const botUid = "BOT_" + Math.random().toString(36).substr(2, 9);
+                        db.ref(`tournaments/${currentTournamentId}/players/${botUid}`).set({ name: "🤖 電腦AI" });
+                        playerUids.push(botUid);
+                        data.players[botUid] = { name: "🤖 電腦AI" };
+                    }
 
-                    matches[matchKey] = {
-                        p1_uid: p1Uid, p2_uid: p2Uid, p1_name: p1Name, p2_name: p2Name,
-                        status: "pending", bo3_score: "0 : 0", winner: ""
-                    };
+                    playerUids = playerUids.sort(() => Math.random() - 0.5);
+                    let matches = {}, roomUpdates = {};
 
-                    roomUpdates[`${currentTournamentId}_${matchKey}`] = {
-                        player1: { name: p1Name, choice: "", status: "waiting" },
-                        player2: { name: p2Name, choice: "", status: "waiting" },
-                        scores: { player1: 0, player2: 0 },
-                        history: ["☄️ 星街專輯爭霸賽 - 準備開戰！"],
-                        matchKey: matchKey
-                    };
-                }
+                    for (let i = 0; i < playerUids.length; i += 2) {
+                        const p1Uid = playerUids[i], p2Uid = playerUids[i+1];
+                        const p1Name = data.players[p1Uid].name, p2Name = data.players[p2Uid].name;
+                        const matchKey = `match_${(i/2)+1}_${Math.floor(100+Math.random()*900)}`;
 
-                db.ref(`rooms`).update(roomUpdates).then(() => {
-                    db.ref('tournaments/' + currentTournamentId).update({ status: "playing", matches: matches });
+                        matches[matchKey] = {
+                            p1_uid: p1Uid, p2_uid: p2Uid, p1_name: p1Name, p2_name: p2Name,
+                            status: "pending", bo3_score: "0 : 0", winner: ""
+                        };
+
+                        roomUpdates[`${currentTournamentId}_${matchKey}`] = {
+                            player1: { name: p1Name, choice: "", status: "waiting" },
+                            player2: { name: p2Name, choice: "", status: "waiting" },
+                            scores: { player1: 0, player2: 0 },
+                            history: ["☄️ 星街專輯爭霸賽 - 準備開戰！"],
+                            matchKey: matchKey
+                        };
+                    }
+
+                    db.ref(`rooms`).update(roomUpdates).then(() => {
+                        db.ref('tournaments/' + currentTournamentId).update({ status: "playing", matches: matches });
+                    });
                 });
             });
         }
