@@ -413,13 +413,16 @@
 
         function play(move) {
             addLog(`我出了：${move}`);
-            hasJudged = false;
+            hasJudged = false; // 出拳時才解鎖裁判
             db.ref(`rooms/${currentRoom}/${myRole}`).update({ choice: move, status: 'ready' });
             document.getElementById('controls').classList.add('pointer-events-none', 'opacity-50');
         }
 
         function processRoundResult(p1Move, p2Move, oldScores, oldHistory) {
-            hasJudged = true;
+            // 🔥 終極修復：一進來立刻鎖死，防止非同步非同步連續觸發
+            if (hasJudged) return; 
+            hasJudged = true; 
+
             const res = judgeWinner(p1Move, p2Move);
             let newScores = { ...oldScores };
             if (res === 'p1') newScores.player1++;
@@ -428,6 +431,7 @@
             const winName = res === 'draw' ? '平手' : (res === 'p1' ? localPlayerNames.player1 : localPlayerNames.player2);
             const record = `${moveEmoji(p1Move)} VS ${moveEmoji(p2Move)} - ${winName}勝`;
             
+            // 寫入房間，同時強制將狀態改為 done 截斷監聽
             db.ref(`rooms/${currentRoom}`).update({ 
                 scores: newScores, 
                 history: [record, ...oldHistory].slice(0, 5),
