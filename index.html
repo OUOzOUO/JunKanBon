@@ -40,20 +40,25 @@
 
         // 核心：進入爭霸賽大廳
         function enterTournamentLobby(tid) {
-            if (currentTid) db.ref('tournaments/' + currentTid).off(); // 關閉舊監聽
+            if (currentTid) db.ref('tournaments/' + currentTid).off();
             currentTid = tid;
-            
-            db.ref('tournaments/' + tid).on('value', (s) => {
+        
+            // 直接監聽該賽事
+            const ref = db.ref('tournaments/' + tid);
+            ref.on('value', (s) => {
                 const data = s.val();
                 if (!data) return;
+                
+                console.log("收到賽事更新:", data); // 按 F12 查看控制台，看有無收到資料
                 
                 const isHost = (data.hostUid === myUid);
                 const players = Object.values(data.players || {});
                 
+                // 更新 UI
                 document.getElementById('lobby-content').innerHTML = `
-                    <div class="mb-4 text-sm">房號: ${tid} | 人數: ${players.length}</div>
-                    <div class="mb-4">${players.map(p => `<span class="bg-gray-100 px-2 py-1 rounded text-xs mr-1">${p.name}</span>`).join('')}</div>
-                    ${isHost ? `<button onclick="startMatch('${tid}')" class="w-full bg-amber-500 text-white py-2 rounded font-bold">開始/重啟配對</button>` : '<p class="text-xs text-gray-400">等待房主開始...</p>'}
+                    <p>房號: ${tid}</p>
+                    <p>玩家: ${players.map(p => p.name).join(', ')}</p>
+                    ${isHost ? `<button onclick="startMatch('${tid}')" class="bg-amber-500 text-white p-2">開始配對</button>` : '<p>等待房主...</p>'}
                 `;
             });
         }
@@ -83,13 +88,21 @@
         }
 
         // 建立賽事
-        function createTournament() {
-            const tid = "T" + Math.floor(1000 + Math.random() * 9000);
-            db.ref('tournaments/' + tid).set({
-                hostUid: myUid,
-                players: { [myUid]: { name: myCurrentName } },
-                status: 'waiting'
-            }).then(() => enterTournamentLobby(tid));
+        function joinTournament(tid) {
+            if (!tid) return alert("請輸入房號");
+            
+            // 檢查是否有這個房間
+            db.ref('tournaments/' + tid).once('value', (snap) => {
+                if (!snap.exists()) return alert("找不到該賽事！");
+                
+                // 寫入玩家資料
+                db.ref(`tournaments/${tid}/players/${myUid}`).set({ name: myCurrentName })
+                .then(() => {
+                    console.log("成功加入:", tid);
+                    enterTournamentLobby(tid);
+                })
+                .catch(err => console.error("寫入失敗", err));
+            });
         }
 
         // 加入賽事 (加入前檢查並移除重複資料)
